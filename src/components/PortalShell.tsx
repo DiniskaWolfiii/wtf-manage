@@ -249,8 +249,7 @@ export function PortalShell({
   return (
     <AppShell
       header={{ height: 60 }}
-      navbar={{ width: 240, breakpoint: 'sm' }}
-      padding="md"
+      navbar={{ width: 260, breakpoint: 'sm' }}
       styles={{
         main: {
           backgroundColor: 'var(--mantine-color-dark-8)',
@@ -261,29 +260,30 @@ export function PortalShell({
       {/* Header */}
       <AppShell.Header
         style={{
+          height: 60,
           backgroundColor: 'var(--mantine-color-dark-7)',
           borderBottom: '1px solid var(--mantine-color-dark-4)',
         }}
       >
-        <Group h="100%" px="md" justify="space-between">
+        <Group h="100%" px="lg" justify="space-between">
           <Group gap="sm">
             <Box
               style={{
-                width: 34,
-                height: 34,
+                width: 32,
+                height: 32,
                 borderRadius: 6,
-                backgroundColor: 'var(--mantine-color-blue-9)',
-                color: '#fff',
+                backgroundColor: 'rgba(21, 170, 191, 0.15)',
+                color: '#66d9e8',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 700,
-                fontSize: 14,
+                fontSize: 13,
               }}
             >
               WTF
             </Box>
-            <Text fw={700} c="white" size="md">
+            <Text fw={700} c="white" size="md" style={{ letterSpacing: '-0.3px' }}>
               WinterFur Manage
             </Text>
           </Group>
@@ -293,8 +293,13 @@ export function PortalShell({
               <Avatar
                 src={profile.avatarUrl || null}
                 radius="xl"
-                size="sm"
-                color="blue"
+                size={32}
+                style={{
+                  backgroundColor: 'var(--mantine-primary-filled, #15aabf)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
               >
                 {initials}
               </Avatar>
@@ -319,223 +324,254 @@ export function PortalShell({
 
       {/* Navbar */}
       <AppShell.Navbar
-        p="sm"
+        p="md"
         style={{
+          width: 260,
           backgroundColor: 'var(--mantine-color-dark-7)',
           borderRight: '1px solid var(--mantine-color-dark-4)',
         }}
       >
-        <Stack gap="xs">
-          <Text size="xs" fw={700} c="dimmed" tt="uppercase" px="xs">
-            Account
-          </Text>
-          <NavLink
-            label="My Profile"
-            leftSection={<IconUser size={18} />}
-            active={activeTab === 'profile'}
-            onClick={() => router.push('/profile')}
-            style={{ borderRadius: 6 }}
-          />
+        <Stack gap="md">
+          <div>
+            <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+              Account
+            </div>
+            <NavLink
+              label="My Profile"
+              leftSection={<IconUser size={18} />}
+              active={activeTab === 'profile'}
+              onClick={() => router.push('/profile')}
+            />
+          </div>
 
-          <Text size="xs" fw={700} c="dimmed" tt="uppercase" px="xs" mt="sm">
-            Crew
-          </Text>
-          <NavLink
-            label="Crew Dashboard"
-            leftSection={<IconPaw size={18} />}
-            active={activeTab === 'crew'}
-            onClick={() => router.push('/crew')}
-            style={{ borderRadius: 6 }}
-          />
+          <div>
+            <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+              Crew
+            </div>
+            <NavLink
+              label="Crew Dashboard"
+              leftSection={<IconPaw size={18} />}
+              active={activeTab === 'crew'}
+              onClick={() => router.push('/crew')}
+            />
+          </div>
 
-          <Text size="xs" fw={700} c="dimmed" tt="uppercase" px="xs" mt="sm">
-            Administration
-          </Text>
-          <NavLink
-            label="Portal Settings"
-            leftSection={<IconSettings size={18} />}
-            active={activeTab === 'admin'}
-            onClick={() => router.push('/admin')}
-            style={{ borderRadius: 6 }}
-          />
+          <div>
+            <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+              Administration
+            </div>
+            <NavLink
+              label="Portal Settings"
+              leftSection={<IconSettings size={18} />}
+              active={activeTab === 'admin'}
+              onClick={() => router.push('/admin')}
+            />
+          </div>
         </Stack>
       </AppShell.Navbar>
 
       {/* Main Content */}
-      <AppShell.Main>
-        <Box style={{ maxWidth: 1200, margin: '0 auto' }} py="md">
+      <AppShell.Main
+        style={{
+          backgroundColor: 'var(--mantine-color-dark-8)',
+        }}
+      >
+        <Box style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
           {/* TAB 1: MY PROFILE */}
           {activeTab === 'profile' && (
-            <Grid gap="xl">
-              {/* Left: Profile View / Edit */}
-              <Grid.Col span={{ base: 12, md: 7 }}>
-                <Group justify="space-between" mb="md" h={40}>
-                  <div>
-                    <Text size="xl" fw={700} c="white">
-                      My Profile
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Your personal details synced with WinterFur Identity
-                    </Text>
-                  </div>
-                  {!isEditingProfile && (
-                    <Button
-                      variant="filled"
-                      size="sm"
-                      onClick={() => {
-                        setEditForm({ ...profile });
-                        setIsEditingProfile(true);
-                      }}
-                    >
-                      Edit Profile
-                    </Button>
-                  )}
-                </Group>
-
-                {!isEditingProfile ? (
-                  isLoadingProfile ? (
-                    <Paper
-                      p="xl"
-                      radius="md"
-                      withBorder
-                      style={{
-                        backgroundColor: 'var(--mantine-color-dark-7)',
-                        borderColor: 'var(--mantine-color-dark-5)',
-                        minHeight: 280,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Group gap="md">
-                        <Loader size="sm" color="blue" />
-                        <Text size="sm" c="dimmed">
-                          Syncing profile with WinterFur Identity...
-                        </Text>
-                      </Group>
-                    </Paper>
-                  ) : (
-                  <Paper
-                    p="lg"
-                    radius="md"
-                    withBorder
-                    style={{
-                      backgroundColor: 'var(--mantine-color-dark-7)',
-                      borderColor: 'var(--mantine-color-dark-5)',
-                    }}
-                  >
-                    <Group gap="lg" mb="xl">
-                      <Avatar
-                        src={profile.avatarUrl || null}
-                        size={84}
-                        radius="md"
-                        color="blue"
+            <div className="space-y-6">
+              <Grid gap={24} align="start">
+                {/* Left: Profile View / Edit (7 cols) */}
+                <Grid.Col span={{ base: 12, md: 7 }}>
+                  <Group justify="space-between" mb="md" style={{ minHeight: 40 }}>
+                    <div>
+                      <Text size="xl" fw={700} c="white">
+                        My Profile
+                      </Text>
+                      <Text size="sm" c="dimmed">
+                        Your personal details synced with WinterFur Identity
+                      </Text>
+                    </div>
+                    {!isEditingProfile && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          setEditForm({ ...profile });
+                          setIsEditingProfile(true);
+                        }}
                       >
-                        {initials}
-                      </Avatar>
-                      <div>
-                        <Text size="xl" fw={700} c="white">
-                          {profile.nickname}
-                        </Text>
-                        <Text size="sm" c="dimmed">
-                          {profile.species} • {profile.pronouns}
-                        </Text>
-                      </div>
-                    </Group>
+                        Edit Profile
+                      </Button>
+                    )}
+                  </Group>
 
-                    <Divider my="md" />
-
-                    <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="sm">
-                      Attendee Information
-                    </Text>
-                    <Grid gap="md" mb="lg">
-                      <Grid.Col span={6}>
-                        <Text size="xs" c="dimmed">
-                          Telegram
-                        </Text>
-                        <Text size="sm" fw={600} c="white">
-                          {profile.telegram || '—'}
-                        </Text>
-                      </Grid.Col>
-                      <Grid.Col span={6}>
-                        <Text size="xs" c="dimmed">
-                          Languages
-                        </Text>
-                        <Group gap={6} mt={4}>
-                          <Pill size="sm">German</Pill>
-                          <Pill size="sm">English</Pill>
+                  {!isEditingProfile ? (
+                    isLoadingProfile ? (
+                      <Paper
+                        p="xl"
+                        radius="md"
+                        withBorder
+                        style={{
+                          backgroundColor: 'var(--mantine-color-dark-7)',
+                          borderColor: 'var(--mantine-color-dark-4)',
+                          minHeight: 280,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Group gap="md">
+                          <Loader size="sm" color="cyan" />
+                          <Text size="sm" c="dimmed">
+                            Syncing profile with WinterFur Identity...
+                          </Text>
                         </Group>
-                      </Grid.Col>
-                    </Grid>
+                      </Paper>
+                    ) : (
+                      <Paper
+                        p={24}
+                        radius="md"
+                        withBorder
+                        style={{
+                          backgroundColor: 'var(--mantine-color-dark-7)',
+                          borderColor: 'var(--mantine-color-dark-4)',
+                        }}
+                      >
+                        <Stack gap={20}>
+                          {/* Avatar + Nickname */}
+                          <Group gap="md">
+                            <Avatar
+                              src={profile.avatarUrl || null}
+                              size={64}
+                              radius="xl"
+                              style={{
+                                backgroundColor: 'var(--mantine-primary-filled, #15aabf)',
+                                color: '#ffffff',
+                                border: '2px solid var(--mantine-color-dark-4)',
+                                fontSize: 20,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {initials}
+                            </Avatar>
+                            <div>
+                              <div className="uppercase-label">Nickname</div>
+                              <Text size="xl" fw={700} c="white">
+                                {profile.nickname}
+                              </Text>
+                            </div>
+                          </Group>
 
-                    <Divider my="md" />
+                          <Divider color="var(--mantine-color-dark-4)" />
 
-                    <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="sm">
-                      Legal & Contact
-                    </Text>
-                    <Grid gap="md">
-                      <Grid.Col span={6}>
-                        <Text size="xs" c="dimmed">
-                          Legal Name
-                        </Text>
-                        <Text size="sm" fw={600} c="white">
-                          {profile.firstName} {profile.lastName}
-                        </Text>
-                      </Grid.Col>
-                      <Grid.Col span={6}>
-                        <Text size="xs" c="dimmed">
-                          Date of Birth
-                        </Text>
-                        <Text size="sm" fw={600} c="white">
-                          {profile.dob}
-                        </Text>
-                      </Grid.Col>
-                      <Grid.Col span={6}>
-                        <Text size="xs" c="dimmed">
-                          Email Address
-                        </Text>
-                        <Text size="sm" fw={600} c="white">
-                          {profile.email}
-                        </Text>
-                      </Grid.Col>
-                      <Grid.Col span={6}>
-                        <Text size="xs" c="dimmed">
-                          Phone Number
-                        </Text>
-                        <Text size="sm" fw={600} c="white">
-                          {profile.phone}
-                        </Text>
-                      </Grid.Col>
-                      <Grid.Col span={12}>
-                        <Text size="xs" c="dimmed">
-                          Residential Address
-                        </Text>
-                        <Text size="sm" fw={600} c="white">
-                          {profile.street}, {profile.zip} {profile.city}, {profile.country}
-                        </Text>
-                      </Grid.Col>
-                    </Grid>
-                  </Paper>
-                  )
-                ) : (
+                          {/* Fursona Info (3 cols) */}
+                          <Grid gap={16}>
+                            <Grid.Col span={{ base: 12, sm: 4 }}>
+                              <div className="uppercase-label">Species</div>
+                              <div className="profile-field-value">{profile.species || '—'}</div>
+                            </Grid.Col>
+                            <Grid.Col span={{ base: 12, sm: 4 }}>
+                              <div className="uppercase-label">Pronouns</div>
+                              <div className="profile-field-value">{profile.pronouns || '—'}</div>
+                            </Grid.Col>
+                            <Grid.Col span={{ base: 12, sm: 4 }}>
+                              <div className="uppercase-label">Telegram Handle</div>
+                              <div className="profile-field-value">{profile.telegram || '—'}</div>
+                            </Grid.Col>
+                          </Grid>
+
+                          <Divider color="var(--mantine-color-dark-4)" />
+
+                          {/* Languages */}
+                          <div>
+                            <div className="uppercase-label">Languages</div>
+                            <Group gap={6} mt={6}>
+                              <Pill size="sm">German</Pill>
+                              <Pill size="sm">English</Pill>
+                            </Group>
+                          </div>
+
+                          <Divider color="var(--mantine-color-dark-4)" />
+
+                          {/* Real Identity (3 cols) */}
+                          <Grid gap={16}>
+                            <Grid.Col span={{ base: 12, sm: 4 }}>
+                              <div className="uppercase-label">First Name</div>
+                              <div className="profile-field-value">{profile.firstName || '—'}</div>
+                            </Grid.Col>
+                            <Grid.Col span={{ base: 12, sm: 4 }}>
+                              <div className="uppercase-label">Last Name</div>
+                              <div className="profile-field-value">{profile.lastName || '—'}</div>
+                            </Grid.Col>
+                            <Grid.Col span={{ base: 12, sm: 4 }}>
+                              <div className="uppercase-label">Date of Birth</div>
+                              <div className="profile-field-value">{profile.dob || '—'}</div>
+                            </Grid.Col>
+                          </Grid>
+
+                          <Divider color="var(--mantine-color-dark-4)" />
+
+                          {/* Contact (2 cols, badge removed) */}
+                          <Grid gap={16}>
+                            <Grid.Col span={{ base: 12, sm: 6 }}>
+                              <div className="uppercase-label">Email Address</div>
+                              <div className="profile-field-value">{profile.email || '—'}</div>
+                            </Grid.Col>
+                            <Grid.Col span={{ base: 12, sm: 6 }}>
+                              <div className="uppercase-label">Phone Number</div>
+                              <div className="profile-field-value">{profile.phone || '—'}</div>
+                            </Grid.Col>
+                          </Grid>
+
+                          <Divider color="var(--mantine-color-dark-4)" />
+
+                          {/* Address */}
+                          <Stack gap={12}>
+                            <div>
+                              <div className="uppercase-label">Street & House Number</div>
+                              <div className="profile-field-value">{profile.street || '—'}</div>
+                            </div>
+                            <Grid gap={16}>
+                              <Grid.Col span={{ base: 12, sm: 6 }}>
+                                <div className="uppercase-label">Postal Code & City</div>
+                                <div className="profile-field-value">
+                                  {profile.zip ? `${profile.zip} ${profile.city}` : (profile.city || '—')}
+                                </div>
+                              </Grid.Col>
+                              <Grid.Col span={{ base: 12, sm: 6 }}>
+                                <div className="uppercase-label">Country</div>
+                                <div className="profile-field-value">{profile.country || '—'}</div>
+                              </Grid.Col>
+                            </Grid>
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    )
+                  ) : (
                   <Paper
                     component="form"
                     onSubmit={handleSaveProfile}
-                    p="lg"
+                    p={24}
                     radius="md"
                     withBorder
                     style={{
                       backgroundColor: 'var(--mantine-color-dark-7)',
-                      borderColor: 'var(--mantine-color-dark-5)',
+                      borderColor: 'var(--mantine-color-dark-4)',
                     }}
                   >
                     <Stack gap="md">
                       <Group gap="md">
                         <Avatar
                           src={editForm.avatarUrl || null}
-                          size={64}
-                          radius="md"
-                          color="blue"
+                          size={48}
+                          radius="xl"
+                          style={{
+                            backgroundColor: 'var(--mantine-primary-filled, #15aabf)',
+                            color: '#ffffff',
+                            fontSize: 16,
+                            fontWeight: 700,
+                          }}
                         >
                           {initials}
                         </Avatar>
@@ -750,7 +786,7 @@ export function PortalShell({
                         </Grid.Col>
                       </Grid>
 
-                      <Divider />
+                      <Divider color="var(--mantine-color-dark-4)" />
 
                       <Group justify="space-between">
                         {saveStatus ? (
@@ -769,7 +805,7 @@ export function PortalShell({
                           >
                             Cancel
                           </Button>
-                          <Button variant="filled" type="submit" loading={isSaving}>
+                          <Button color="cyan" type="submit" loading={isSaving}>
                             Save Changes
                           </Button>
                         </Group>
@@ -779,24 +815,24 @@ export function PortalShell({
                 )}
               </Grid.Col>
 
-              {/* Right: Account Security */}
+              {/* Right: Account Security (5 cols) */}
               <Grid.Col span={{ base: 12, md: 5 }}>
-                <Box mb="md" h={40}>
+                <Box mb="md" style={{ minHeight: 40 }}>
                   <Text size="xl" fw={700} c="white">
                     Account Security
                   </Text>
-                  <Text size="xs" c="dimmed">
+                  <Text size="sm" c="dimmed">
                     Managed via WinterFur Identity
                   </Text>
                 </Box>
 
                 <Paper
-                  p="lg"
+                  p={24}
                   radius="md"
                   withBorder
                   style={{
                     backgroundColor: 'var(--mantine-color-dark-7)',
-                    borderColor: 'var(--mantine-color-dark-5)',
+                    borderColor: 'var(--mantine-color-dark-4)',
                   }}
                 >
                   <Stack gap="lg">
@@ -807,13 +843,13 @@ export function PortalShell({
                           <Text size="sm" fw={600} c="white">
                             Password
                           </Text>
-                          <Text size="xs" c="dimmed">
+                          <Text size="xs" c="dimmed" mt={2}>
                             Last updated: {security.passwordUpdated || 'Configured'}
                           </Text>
                         </div>
                         <Button
                           variant="default"
-                          size="xs"
+                          size="sm"
                           onClick={() => handleTriggerAction('UPDATE_PASSWORD')}
                         >
                           Change
@@ -821,7 +857,7 @@ export function PortalShell({
                       </Group>
                     </div>
 
-                    <Divider />
+                    <Divider color="var(--mantine-color-dark-4)" />
 
                     {/* 2FA */}
                     <Group justify="space-between">
@@ -834,11 +870,12 @@ export function PortalShell({
                             color={security.hasTotp ? 'teal' : 'gray'}
                             variant="light"
                             size="sm"
+                            tt="uppercase"
                           >
                             {security.hasTotp ? 'Enabled' : 'Disabled'}
                           </Badge>
                         </Group>
-                        <Text size="xs" c="dimmed">
+                        <Text size="xs" c="dimmed" mt={2}>
                           {security.hasTotp
                             ? security.totpLabel || 'TOTP 6-digit codes active'
                             : 'Not configured yet'}
@@ -846,14 +883,14 @@ export function PortalShell({
                       </div>
                       <Button
                         variant="default"
-                        size="xs"
+                        size="sm"
                         onClick={() => handleTriggerAction('CONFIGURE_TOTP')}
                       >
-                        {security.hasTotp ? 'Reconfigure' : 'Set Up'}
+                        {security.hasTotp ? 'Configure' : 'Set Up'}
                       </Button>
                     </Group>
 
-                    <Divider />
+                    <Divider color="var(--mantine-color-dark-4)" />
 
                     {/* Passkeys */}
                     <div>
@@ -867,17 +904,18 @@ export function PortalShell({
                               color={security.passkeys.length > 0 ? 'teal' : 'gray'}
                               variant="light"
                               size="sm"
+                              tt="uppercase"
                             >
                               {security.passkeys.length} Registered
                             </Badge>
                           </Group>
-                          <Text size="xs" c="dimmed">
+                          <Text size="xs" c="dimmed" mt={2}>
                             Hardware Keys & Windows Hello
                           </Text>
                         </div>
                         <Button
                           variant="default"
-                          size="xs"
+                          size="sm"
                           onClick={() => handleTriggerAction('webauthn-register')}
                         >
                           + Add
@@ -928,7 +966,8 @@ export function PortalShell({
                 </Paper>
               </Grid.Col>
             </Grid>
-          )}
+          </div>
+        )}
 
           {/* TAB 2: CREW DASHBOARD */}
           {activeTab === 'crew' && (

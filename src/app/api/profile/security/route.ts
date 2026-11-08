@@ -31,3 +31,4 @@ export async function DELETE(req: Request) {
 
   return NextResponse.json({ success });
 }
+

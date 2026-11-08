@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppShell,
   Group,
@@ -19,6 +19,7 @@ import {
   ActionIcon,
   Stack,
   Pill,
+  Loader,
 } from '@mantine/core';
 import {
   IconUser,
@@ -32,6 +33,7 @@ import {
   IconLock,
   IconShieldCheck,
   IconFileText,
+  IconLogout,
 } from '@tabler/icons-react';
 
 interface QuickLink {
@@ -47,7 +49,16 @@ interface Passkey {
   date: string;
 }
 
-export function PortalShell() {
+export interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+  username: string;
+  image: string;
+  roles: string[];
+}
+
+export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
   const [activeTab, setActiveTab] = useState<'profile' | 'crew' | 'admin'>('profile');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
@@ -56,23 +67,26 @@ export function PortalShell() {
   const [newPasskeyName, setNewPasskeyName] = useState('');
   const [hasBadge, setHasBadge] = useState(true);
   const [twoFaEnabled, setTwoFaEnabled] = useState(true);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
-  // Profile Form State
+  // Profile Form State initialized with session user or defaults
   const [profile, setProfile] = useState({
-    nickname: 'Kodiak',
+    nickname: sessionUser?.username || sessionUser?.name || 'Kodiak',
     telegram: '@KodiakPolar',
     species: 'Polar Bear',
     pronouns: 'he/him',
-    firstName: 'Lukas',
-    lastName: 'Winterstein',
+    firstName: sessionUser?.name?.split(' ')[0] || 'Lukas',
+    lastName: sessionUser?.name?.split(' ').slice(1).join(' ') || 'Winterstein',
     dob: '1998-02-14',
-    email: 'lukas.winterstein@example.com',
+    email: sessionUser?.email || 'lukas.winterstein@example.com',
     phone: '+49 170 9823411',
     street: 'Schneegipfelweg 42',
     zip: '80331',
     city: 'München',
     country: 'Germany',
-    avatarUrl: '',
+    avatarUrl: sessionUser?.image || '',
   });
 
   const [editForm, setEditForm] = useState({ ...profile });
@@ -93,10 +107,42 @@ export function PortalShell() {
     { id: 2, name: 'Windows Hello (Desktop)', date: 'Added Nov 02, 2026' },
   ]);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetch('/api/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          setProfile(data);
+          setEditForm(data);
+        }
+      })
+      .catch((err) => console.error('Failed to load profile:', err))
+      .finally(() => setIsLoadingProfile(false));
+  }, []);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProfile({ ...editForm });
-    setIsEditingProfile(false);
+    setIsSaving(true);
+    setSaveStatus(null);
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        setProfile({ ...editForm });
+        setIsEditingProfile(false);
+        setSaveStatus('Profile saved and synced with WinterFur Identity!');
+      } else {
+        setSaveStatus('Could not sync changes to WinterFur Identity.');
+      }
+    } catch (err) {
+      console.error(err);
+      setSaveStatus('Error saving profile.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAddPasskey = (e: React.FormEvent) => {
@@ -201,6 +247,17 @@ export function PortalShell() {
               <Text size="sm" fw={600} c="white">
                 {profile.nickname}
               </Text>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="sm"
+                title="Sign out of WinterFur Manage"
+                onClick={() => {
+                  window.location.href = '/api/auth/signout';
+                }}
+              >
+                <IconLogout size={16} />
+              </ActionIcon>
             </Group>
           </Group>
         </Group>
@@ -264,7 +321,7 @@ export function PortalShell() {
                       My Profile
                     </Text>
                     <Text size="xs" c="dimmed">
-                      Your personal details synced with Keycloak
+                      Your personal details synced with WinterFur Identity
                     </Text>
                   </div>
                   {!isEditingProfile && (
@@ -282,6 +339,28 @@ export function PortalShell() {
                 </Group>
 
                 {!isEditingProfile ? (
+                  isLoadingProfile ? (
+                    <Paper
+                      p="xl"
+                      radius="md"
+                      withBorder
+                      style={{
+                        backgroundColor: 'var(--mantine-color-dark-7)',
+                        borderColor: 'var(--mantine-color-dark-5)',
+                        minHeight: 280,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Group gap="md">
+                        <Loader size="sm" color="blue" />
+                        <Text size="sm" c="dimmed">
+                          Syncing profile with WinterFur Identity...
+                        </Text>
+                      </Group>
+                    </Paper>
+                  ) : (
                   <Paper
                     p="lg"
                     radius="md"
@@ -386,6 +465,7 @@ export function PortalShell() {
                       </Grid.Col>
                     </Grid>
                   </Paper>
+                  )
                 ) : (
                   <Paper
                     component="form"
@@ -621,16 +701,27 @@ export function PortalShell() {
 
                       <Divider />
 
-                      <Group justify="flex-end" gap="sm">
-                        <Button
-                          variant="default"
-                          onClick={() => setIsEditingProfile(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button variant="filled" type="submit">
-                          Save Changes
-                        </Button>
+                      <Group justify="space-between">
+                        {saveStatus ? (
+                          <Text
+                            size="xs"
+                            c={saveStatus.includes('saved') ? 'teal' : 'red'}
+                          >
+                            {saveStatus}
+                          </Text>
+                        ) : <div />}
+                        <Group gap="sm">
+                          <Button
+                            variant="default"
+                            onClick={() => setIsEditingProfile(false)}
+                            disabled={isSaving}
+                          >
+                            Cancel
+                          </Button>
+                          <Button variant="filled" type="submit" loading={isSaving}>
+                            Save Changes
+                          </Button>
+                        </Group>
                       </Group>
                     </Stack>
                   </Paper>
@@ -644,7 +735,7 @@ export function PortalShell() {
                     Account Security
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Managed via Keycloak Identity Provider
+                    Managed via WinterFur Identity
                   </Text>
                 </Box>
 
@@ -1007,7 +1098,7 @@ export function PortalShell() {
                         defaultValue="WinterFur 2026"
                       />
                       <TextInput
-                        label="Identity Server (Keycloak)"
+                        label="Identity Server (WinterFur Identity)"
                         defaultValue="https://identity.winterfur.org"
                         disabled
                       />

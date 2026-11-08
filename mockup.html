@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WinterFur — Staff & Convention Management Portal</title>
+  <style>
+    /* Reset & Box Sizing */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Exact Mantine v7 Dark Theme Tokens */
+    :root {
+      --mantine-color-body: #141517;
+      --mantine-color-dark-8: #141517;
+      --mantine-color-dark-7: #1a1b1e;
+      --mantine-color-dark-6: #25262b;
+      --mantine-color-dark-5: #2c2e33;
+      --mantine-color-dark-4: #373a40;
+      --mantine-color-dark-3: #5c5f66;
+      --mantine-color-dark-2: #909296;
+      --mantine-color-dark-1: #a6a7ab;
+      --mantine-color-dark-0: #c1c2c5;
+      --mantine-color-white: #ffffff;
+
+      /* Mantine Primary Color: Cyan / Winter Blue */
+      --mantine-primary-filled: #15aabf;
+      --mantine-primary-hover: #1098ad;
+      --mantine-primary-light: rgba(21, 170, 191, 0.15);
+      --mantine-primary-light-color: #66d9e8;
+      --mantine-radius-sm: 4px;
+      --mantine-radius-md: 8px;
+      --mantine-radius-lg: 12px;
+    }
+
+    body {
+      background-color: var(--mantine-color-body);
+      color: var(--mantine-color-dark-0);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Layout Shell */
+    .app-header {
+      height: 60px;
+      background-color: var(--mantine-color-dark-7);
+      border-bottom: 1px solid var(--mantine-color-dark-4);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .app-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    .app-navbar {
+      width: 260px;
+      background-color: var(--mantine-color-dark-7);
+      border-right: 1px solid var(--mantine-color-dark-4);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .app-main {
+      flex: 1;
+      padding: 32px;
+      overflow-y: auto;
+      background-color: var(--mantine-color-dark-8);
+    }
+
+    .main-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* Grid System */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (min-width: 1024px) {
+      .grid-2col {
+        grid-template-columns: 7fr 5fr;
+      }
+      .grid-2col-even {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .grid-fields-2 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    @media (min-width: 640px) {
+      .grid-fields-2 {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .grid-fields-3 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    @media (min-width: 640px) {
+      .grid-fields-3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    /* Mantine Components */
+    .mantine-Paper {
+      background-color: var(--mantine-color-dark-7);
+      border: 1px solid var(--mantine-color-dark-4);
+      border-radius: var(--mantine-radius-md);
+      padding: 24px;
+    }
+
+    .mantine-NavLink {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--mantine-radius-sm);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--mantine-color-dark-0);
+      background: transparent;
+      border: 1px solid transparent;
+      width: 100%;
+      text-align: left;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+    .mantine-NavLink:hover {
+      background-color: var(--mantine-color-dark-6);
+      color: var(--mantine-color-white);
+      border-color: var(--mantine-color-dark-4);
+      transform: translateX(2px);
+    }
+    .mantine-NavLink[data-active="true"] {
+      background-color: var(--mantine-primary-light);
+      color: var(--mantine-primary-light-color);
+      border-color: rgba(21, 170, 191, 0.3);
+    }
+
+    .mantine-Button-filled {
+      background-color: var(--mantine-primary-filled);
+      color: var(--mantine-color-white);
+      height: 36px;
+      padding: 0 18px;
+      border-radius: var(--mantine-radius-sm);
+      font-weight: 600;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color 120ms ease;
+    }
+    .mantine-Button-filled:hover {
+      background-color: var(--mantine-primary-hover);
+    }
+
+    .mantine-Button-default {
+      background-color: var(--mantine-color-dark-6);
+      border: 1px solid var(--mantine-color-dark-4);
+      color: var(--mantine-color-dark-0);
+      height: 36px;
+      padding: 0 16px;
+      border-radius: var(--mantine-radius-sm);
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color 120ms ease;
+    }
+    .mantine-Button-default:hover {
+      background-color: var(--mantine-color-dark-5);
+      color: var(--mantine-color-white);
+    }
+
+    .mantine-Input, .mantine-Select {
+      width: 100%;
+      height: 36px;
+      padding: 0 12px;
+      background-color: var(--mantine-color-dark-6);
+      border: 1px solid var(--mantine-color-dark-4);
+      border-radius: var(--mantine-radius-sm);
+      color: var(--mantine-color-white);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 120ms ease;
+    }
+    .mantine-Input:focus, .mantine-Select:focus {
+      border-color: var(--mantine-primary-filled);
+    }
+    .mantine-Input:disabled {
+      background-color: var(--mantine-color-dark-7);
+      color: var(--mantine-color-dark-2);
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .mantine-Pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background-color: var(--mantine-color-dark-6);
+      border: 1px solid var(--mantine-color-dark-4);
+      color: var(--mantine-color-dark-0);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .mantine-Pill-remove {
+      background: none;
+      border: none;
+      color: var(--mantine-color-dark-2);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .mantine-Pill-remove:hover {
+      color: var(--mantine-color-white);
+    }
+
+    .mantine-Badge-teal {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.25px;
+      white-space: nowrap;
+      background-color: rgba(18, 184, 134, 0.15);
+      color: #63e6be;
+    }
+
+    .mantine-Badge-gray {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.25px;
+      white-space: nowrap;
+      background-color: var(--mantine-color-dark-5);
+      color: var(--mantine-color-dark-1);
+    }
+
+    /* Helper Utilities */
+    .hidden { display: none !important; }
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .justify-end { justify-content: flex-end; }
+    .gap-2 { gap: 8px; }
+    .gap-3 { gap: 12px; }
+    .gap-4 { gap: 16px; }
+    .gap-6 { gap: 24px; }
+    .space-y-2 > * + * { margin-top: 8px; }
+    .space-y-3 > * + * { margin-top: 12px; }
+    .space-y-4 > * + * { margin-top: 16px; }
+    .space-y-5 > * + * { margin-top: 20px; }
+    .space-y-6 > * + * { margin-top: 24px; }
+    .border-t { border-top: 1px solid var(--mantine-color-dark-4); }
+    .pt-3 { padding-top: 12px; }
+    .pt-4 { padding-top: 16px; }
+    .pt-5 { padding-top: 20px; }
+    .text-xs { font-size: 12px; }
+    .text-sm { font-size: 14px; }
+    .text-base { font-size: 16px; }
+    .text-xl { font-size: 20px; }
+    .text-2xl { font-size: 24px; }
+    .font-semibold { font-weight: 600; }
+    .font-bold { font-weight: 700; }
+    .text-white { color: #ffffff; }
+    .text-muted { color: var(--mantine-color-dark-2); }
+    .text-sub { color: var(--mantine-color-dark-1); }
+    .text-red { color: #ff6b6b; }
+    .uppercase-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--mantine-color-dark-2);
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- AppShell.Header -->
+  <header class="app-header">
+    <div class="flex items-center gap-3">
+      <div style="width: 32px; height: 32px; border-radius: 6px; background: var(--mantine-primary-light); color: var(--mantine-primary-light-color); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">
+        WTF
+      </div>
+      <div>
+        <span class="text-white font-bold text-base tracking-tight">WinterFur Manage</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 text-xs text-muted">
+        <span>Con-Badge:</span>
+        <button onclick="toggleBadgeState()" id="badge-toggle-btn" class="mantine-Button-default" style="height: 28px; padding: 0 10px; font-size: 12px;">
+          Registered (#0142)
+        </button>
+      </div>
+
+      <div style="width: 1px; height: 16px; background: var(--mantine-color-dark-4);"></div>
+
+      <!-- User Menu -->
+      <div class="flex items-center gap-3">
+        <div id="header-avatar-box" style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: var(--mantine-primary-filled); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">
+          <span id="header-user-initials">KO</span>
+          <img id="header-avatar-img" src="" alt="" class="hidden" style="width: 100%; height: 100%; object-fit: cover;" />
+        </div>
+        <div class="text-sm font-semibold text-white" id="header-user-name">Kodiak</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- AppShell Body -->
+  <div class="app-body">
+
+    <!-- AppShell.Navbar -->
+    <aside class="app-navbar">
+      <div class="space-y-4">
+        <div>
+          <div class="uppercase-label" style="padding: 0 12px 6px;">Account</div>
+          <button type="button" id="nav-profile" onclick="switchPage('profile')" class="mantine-NavLink" data-active="true">
+            <span>👤</span>
+            <span>My Profile</span>
+          </button>
+        </div>
+
+        <div>
+          <div class="uppercase-label" style="padding: 0 12px 6px;">Crew</div>
+          <button type="button" id="nav-crew" onclick="switchPage('crew')" class="mantine-NavLink" data-active="false">
+            <span>🐾</span>
+            <span>Crew Dashboard</span>
+          </button>
+        </div>
+
+        <div>
+          <div class="uppercase-label" style="padding: 0 12px 6px;">Administration</div>
+          <button type="button" id="nav-admin" onclick="switchPage('admin')" class="mantine-NavLink" data-active="false">
+            <span>⚙️</span>
+            <span>Portal Settings</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- AppShell.Main -->
+    <main class="app-main">
+      <div class="main-container">
+
+        <!-- ==========================================
+             PAGE 1: MY PROFILE & SECURITY
+             ========================================== -->
+        <div id="page-profile" class="space-y-6">
+          <div class="grid-2col">
+
+            <!-- LEFT COLUMN: MY PROFILE -->
+            <div class="space-y-4">
+              <div class="flex items-center justify-between" style="min-height: 40px;">
+                <div>
+                  <h1 class="text-2xl font-bold text-white">My Profile</h1>
+                  <p class="text-sm text-sub">Your personal details synced with Keycloak</p>
+                </div>
+                <button id="edit-btn" onclick="setEditMode(true)" class="mantine-Button-default">
+                  Edit Profile
+                </button>
+              </div>
+
+              <!-- VIEW MODE -->
+              <div id="profile-view" class="mantine-Paper space-y-5">
+                <!-- Avatar + Nickname -->
+                <div class="flex items-center gap-4">
+                  <div style="width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: var(--mantine-primary-filled); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; border: 2px solid var(--mantine-color-dark-4);">
+                    <span id="view-avatar-initials">KO</span>
+                    <img id="view-avatar-img" src="" alt="Profile" class="hidden" style="width: 100%; height: 100%; object-fit: cover;" />
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Nickname</div>
+                    <div id="view-nickname" class="text-xl font-bold text-white">Kodiak</div>
+                  </div>
+                </div>
+
+                <!-- Fursona Info -->
+                <div class="border-t pt-5 grid-fields-3">
+                  <div>
+                    <div class="uppercase-label">Species</div>
+                    <div id="view-species" class="text-base font-semibold text-white">Arctic Wolf</div>
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Pronouns</div>
+                    <div id="view-pronouns" class="text-base font-semibold text-white">he/him</div>
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Telegram Handle</div>
+                    <div id="view-telegram" class="text-base font-semibold text-white">@kodiak_wuff</div>
+                  </div>
+                </div>
+
+                <!-- Languages -->
+                <div class="border-t pt-5">
+                  <div class="uppercase-label">Languages</div>
+                  <div id="view-languages" class="flex" style="flex-wrap: wrap; gap: 6px;"></div>
+                </div>
+
+                <!-- Real Identity -->
+                <div class="border-t pt-5 grid-fields-3">
+                  <div>
+                    <div class="uppercase-label">First Name</div>
+                    <div id="view-firstname" class="text-base font-semibold text-white">Lukas</div>
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Last Name</div>
+                    <div id="view-lastname" class="text-base font-semibold text-white">Winterstein</div>
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Date of Birth</div>
+                    <div id="view-dob" class="text-base font-semibold text-white">1998-02-14</div>
+                  </div>
+                </div>
+
+                <!-- Contact & Badge -->
+                <div class="border-t pt-5 grid-fields-3">
+                  <div>
+                    <div class="uppercase-label">Email Address</div>
+                    <div id="view-email" class="text-base font-semibold text-white">lukas.winterstein@example.com</div>
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Phone Number</div>
+                    <div id="view-phone" class="text-base font-semibold text-white">+49 170 9823411</div>
+                  </div>
+                  <div>
+                    <div class="uppercase-label">Badge Number</div>
+                    <div id="view-badge" class="text-base font-semibold text-white">#0142</div>
+                  </div>
+                </div>
+
+                <!-- Address -->
+                <div class="border-t pt-5 space-y-3">
+                  <div>
+                    <div class="uppercase-label">Street & House Number</div>
+                    <div id="view-street" class="text-base font-semibold text-white">Schneegipfelweg 42</div>
+                  </div>
+                  <div class="grid-fields-2">
+                    <div>
+                      <div class="uppercase-label">Postal Code & City</div>
+                      <div id="view-city" class="text-base font-semibold text-white">80331 München</div>
+                    </div>
+                    <div>
+                      <div class="uppercase-label">Country</div>
+                      <div id="view-country" class="text-base font-semibold text-white">Germany</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- EDIT MODE (FORM) -->
+              <form id="profile-edit" onsubmit="saveProfile(event)" class="hidden mantine-Paper space-y-4">
+                <div class="flex items-center justify-between border-b" style="padding-bottom: 12px; border-color: var(--mantine-color-dark-4);">
+                  <span class="text-base font-bold text-white">Edit Personal Information</span>
+                  <span class="text-xs text-muted">Fields marked with * are required</span>
+                </div>
+
+                <!-- Avatar Upload -->
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 6px;">Profile Picture</label>
+                  <div class="flex items-center gap-3">
+                    <div style="width: 48px; height: 48px; border-radius: 50%; overflow: hidden; background: var(--mantine-primary-filled); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700;">
+                      <span id="edit-avatar-initials">KO</span>
+                      <img id="edit-avatar-img" src="" alt="Preview" class="hidden" style="width: 100%; height: 100%; object-fit: cover;" />
+                    </div>
+                    <label class="mantine-Button-default" style="cursor: pointer;">
+                      <span>Upload Image...</span>
+                      <input type="file" accept="image/*" onchange="handleAvatarUpload(event)" style="display: none;" />
+                    </label>
+                    <button type="button" id="remove-avatar-btn" onclick="clearAvatar()" class="hidden mantine-Button-default text-red" style="padding: 0 10px;">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Nickname & Telegram -->
+                <div class="grid-fields-2">
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Nickname <span class="text-red">*</span></label>
+                    <input type="text" id="input-nickname" value="Kodiak" required class="mantine-Input" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Telegram Handle</label>
+                    <input type="text" id="input-telegram" value="@kodiak_wuff" placeholder="@username" class="mantine-Input" />
+                  </div>
+                </div>
+
+                <!-- Species & Pronouns -->
+                <div class="grid-fields-2">
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Species</label>
+                    <select id="input-species" class="mantine-Select">
+                      <option value="Arctic Wolf" selected>Arctic Wolf</option>
+                      <option value="Wolf">Wolf</option>
+                      <option value="Red Fox">Red Fox</option>
+                      <option value="Snow Fox">Snow Fox</option>
+                      <option value="Snow Leopard">Snow Leopard</option>
+                      <option value="Dragon">Dragon</option>
+                      <option value="Dog / Husky">Dog / Husky</option>
+                      <option value="Red Panda">Red Panda</option>
+                      <option value="Other">Other / Hybrid</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Pronouns</label>
+                    <input type="text" id="input-pronouns" value="he/him" placeholder="he/him, she/her, ..." class="mantine-Input" />
+                  </div>
+                </div>
+
+                <!-- Real Name & DOB -->
+                <div class="grid-fields-3">
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">First Name <span class="text-red">*</span></label>
+                    <input type="text" id="input-firstname" value="Lukas" required class="mantine-Input" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Last Name <span class="text-red">*</span></label>
+                    <input type="text" id="input-lastname" value="Winterstein" required class="mantine-Input" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Date of Birth <span class="text-red">*</span></label>
+                    <input type="date" id="input-dob" value="1998-02-14" required class="mantine-Input" />
+                  </div>
+                </div>
+
+                <!-- Contact Info -->
+                <div class="grid-fields-2">
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Email Address <span class="text-red">*</span></label>
+                    <input type="email" id="input-email" value="lukas.winterstein@example.com" required class="mantine-Input" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Phone Number <span class="text-red">*</span></label>
+                    <input type="tel" id="input-phone" value="+49 170 9823411" required class="mantine-Input" />
+                  </div>
+                </div>
+
+                <!-- Address -->
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Street & House Number <span class="text-red">*</span></label>
+                  <input type="text" id="input-street" value="Schneegipfelweg 42" required class="mantine-Input" />
+                </div>
+
+                <div class="grid-fields-3">
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Postal Code <span class="text-red">*</span></label>
+                    <input type="text" id="input-zip" value="80331" required class="mantine-Input" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">City <span class="text-red">*</span></label>
+                    <input type="text" id="input-city" value="München" required class="mantine-Input" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Country <span class="text-red">*</span></label>
+                    <select id="input-country" class="mantine-Select" required>
+                      <option value="Germany" selected>Germany (Deutschland)</option>
+                      <option value="Austria">Austria (Österreich)</option>
+                      <option value="Switzerland">Switzerland (Schweiz)</option>
+                      <option value="Netherlands">Netherlands</option>
+                      <option value="Belgium">Belgium</option>
+                      <option value="France">France</option>
+                      <option value="United Kingdom">United Kingdom</option>
+                      <option value="Poland">Poland</option>
+                      <option value="Czech Republic">Czech Republic</option>
+                      <option value="Denmark">Denmark</option>
+                      <option value="Sweden">Sweden</option>
+                      <option value="Norway">Norway</option>
+                      <option value="Finland">Finland</option>
+                      <option value="Italy">Italy</option>
+                      <option value="Spain">Spain</option>
+                      <option value="Portugal">Portugal</option>
+                      <option value="Ireland">Ireland</option>
+                      <option value="Luxembourg">Luxembourg</option>
+                      <option value="Liechtenstein">Liechtenstein</option>
+                      <option value="United States">United States</option>
+                      <option value="Canada">Canada</option>
+                      <option value="Australia">Australia</option>
+                      <option value="Other">Other / International</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex items-center justify-end gap-3 pt-4 border-t">
+                  <button type="button" onclick="setEditMode(false)" class="mantine-Button-default">Cancel</button>
+                  <button type="submit" class="mantine-Button-filled">Save Changes</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- RIGHT COLUMN: ACCOUNT SECURITY -->
+            <div class="space-y-4">
+              <div style="min-height: 40px;">
+                <h2 class="text-xl font-bold text-white">Account Security</h2>
+                <p class="text-sm text-sub">Managed via Keycloak Identity Provider</p>
+              </div>
+
+              <div class="mantine-Paper space-y-5">
+                <!-- Password Row -->
+                <div>
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-sm font-semibold text-white">Password</div>
+                      <div id="password-subtext" class="text-xs text-muted">Last updated 3 months ago</div>
+                    </div>
+                    <button id="change-pw-btn" onclick="togglePasswordForm(true)" class="mantine-Button-default">Change</button>
+                  </div>
+
+                  <form id="password-form" onsubmit="savePassword(event)" class="hidden space-y-3 pt-3 border-t" style="margin-top: 12px;">
+                    <div>
+                      <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Current Password</label>
+                      <input type="password" required class="mantine-Input" placeholder="••••••••••••" />
+                    </div>
+                    <div class="grid-fields-2">
+                      <div>
+                        <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">New Password</label>
+                        <input type="password" required class="mantine-Input" placeholder="Min. 8 chars" />
+                      </div>
+                      <div>
+                        <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Confirm Password</label>
+                        <input type="password" required class="mantine-Input" placeholder="Repeat password" />
+                      </div>
+                    </div>
+                    <div class="flex items-center justify-end gap-2 pt-2">
+                      <button type="button" onclick="togglePasswordForm(false)" class="mantine-Button-default" style="height: 30px; font-size: 12px;">Cancel</button>
+                      <button type="submit" class="mantine-Button-filled" style="height: 30px; font-size: 12px;">Update Password</button>
+                    </div>
+                  </form>
+                </div>
+
+                <!-- 2FA TOTP -->
+                <div class="border-t pt-4 flex items-center justify-between">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-white">2FA Authenticator</span>
+                      <span id="twofa-badge" class="mantine-Badge-teal">Enabled</span>
+                    </div>
+                    <div class="text-xs text-muted" style="margin-top: 2px;">TOTP 6-digit codes active</div>
+                  </div>
+                  <button id="twofa-btn" onclick="toggleTwoFA()" class="mantine-Button-default">Configure</button>
+                </div>
+
+                <!-- WebAuthn Passkeys -->
+                <div class="border-t pt-4 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold text-white">Passkeys & Keys</span>
+                        <span id="webauthn-count-badge" class="mantine-Badge-teal">2 Registered</span>
+                      </div>
+                      <div class="text-xs text-muted" style="margin-top: 2px;">Hardware Keys & Windows Hello</div>
+                    </div>
+                    <button id="add-passkey-btn" onclick="togglePasskeyForm(true)" class="mantine-Button-default">+ Add</button>
+                  </div>
+
+                  <div id="passkeys-list" class="space-y-2"></div>
+
+                  <form id="passkey-form" onsubmit="addPasskey(event)" class="hidden space-y-2 p-3 border-t" style="background: var(--mantine-color-dark-8); border-radius: 6px;">
+                    <label class="text-xs font-semibold text-white" style="display: block;">Device Name</label>
+                    <input type="text" id="input-passkey-name" required placeholder="e.g. YubiKey 5C..." class="mantine-Input" />
+                    <div class="flex items-center justify-end gap-2 pt-2">
+                      <button type="button" onclick="togglePasskeyForm(false)" class="mantine-Button-default" style="height: 28px; font-size: 11px;">Cancel</button>
+                      <button type="submit" class="mantine-Button-filled" style="height: 28px; font-size: 11px;">Register Key</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ==========================================
+             PAGE 2: CREW DASHBOARD
+             ========================================== -->
+        <div id="page-crew" class="hidden space-y-6">
+          <h1 class="text-2xl font-bold text-white">Crew Dashboard</h1>
+
+          <div class="grid-2col-even" style="display: grid; gap: 24px;">
+            <!-- Left: NDA & Quick Links -->
+            <div class="space-y-6">
+              <!-- NDA Card -->
+              <div class="mantine-Paper flex items-center justify-between">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-base font-bold text-white">Volunteer Agreement (NDA)</span>
+                    <span class="mantine-Badge-teal">Signed</span>
+                  </div>
+                  <div class="text-xs text-muted" style="margin-top: 4px;">Signed Oct 12, 2026 • Version 2.1</div>
+                </div>
+                <button type="button" onclick="openNdaModal(true)" class="mantine-Button-default">View</button>
+              </div>
+
+              <!-- Quick Links -->
+              <div class="mantine-Paper flex items-center justify-between" style="padding: 16px 24px;">
+                <span class="uppercase-label" style="margin: 0;">Quick Links</span>
+                <div id="crew-quicklinks-pills" class="flex" style="gap: 8px;"></div>
+              </div>
+            </div>
+
+            <!-- Right: Roles & Skills -->
+            <div class="mantine-Paper space-y-5">
+              <div>
+                <div class="uppercase-label">My Crew Roles</div>
+                <div class="flex" style="flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                  <span class="mantine-Pill">IT - Lead</span>
+                  <span class="mantine-Pill">Venue Relation - Catering</span>
+                  <span class="mantine-Pill">Con-Ops - Dispatcher</span>
+                </div>
+              </div>
+
+              <div class="border-t pt-5">
+                <div class="uppercase-label">My Skills (FR Managed)</div>
+                <div class="flex" style="flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                  <span class="mantine-Pill">German - Native</span>
+                  <span class="mantine-Pill">English - B2</span>
+                  <span class="mantine-Pill">Communication - Advanced</span>
+                  <span class="mantine-Pill">First Aid - Basic</span>
+                </div>
+              </div>
+
+              <div class="border-t pt-4 text-xs text-muted">
+                ℹ️ Roles and skills are assigned and audited by <strong class="text-white">FR (Furry Resources)</strong>.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             PAGE 3: PORTAL SETTINGS
+             ========================================== -->
+        <div id="page-admin" class="hidden space-y-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <h1 class="text-2xl font-bold text-white">Portal Settings</h1>
+              <p class="text-sm text-sub">Global branding & quick links configuration</p>
+            </div>
+            <button type="button" onclick="alert('Settings saved!');" class="mantine-Button-filled">Save All</button>
+          </div>
+
+          <div class="grid-2col-even" style="display: grid; gap: 24px;">
+            <div class="space-y-6">
+              <div class="mantine-Paper space-y-4">
+                <div class="uppercase-label">General Branding</div>
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Portal Name</label>
+                  <input type="text" value="WinterFur" class="mantine-Input" />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Slogan / Tagline</label>
+                  <input type="text" value="Winter Furry Convention in the Heart of the Alps" class="mantine-Input" />
+                </div>
+              </div>
+
+              <div class="mantine-Paper space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="uppercase-label">Crew Quick Links Manager</div>
+                  <button type="button" onclick="toggleAddQuickLinkForm(true)" id="add-ql-btn" class="mantine-Button-default" style="height: 28px; font-size: 11px;">+ Add Link</button>
+                </div>
+
+                <form id="add-ql-form" onsubmit="saveAdminQuickLink(event)" class="hidden space-y-3 p-3 border-t" style="background: var(--mantine-color-dark-8); border-radius: 6px;">
+                  <input type="hidden" id="ql-input-id" value="" />
+                  <div class="grid-fields-2">
+                    <div>
+                      <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Emoji / Icon</label>
+                      <input type="text" id="ql-input-icon" value="🔗" class="mantine-Input" />
+                    </div>
+                    <div>
+                      <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Title</label>
+                      <input type="text" id="ql-input-title" required class="mantine-Input" />
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Target URL</label>
+                    <input type="url" id="ql-input-url" required class="mantine-Input" />
+                  </div>
+                  <div class="flex items-center justify-end gap-2 pt-2">
+                    <button type="button" onclick="toggleAddQuickLinkForm(false)" class="mantine-Button-default" style="height: 28px; font-size: 11px;">Cancel</button>
+                    <button type="submit" class="mantine-Button-filled" style="height: 28px; font-size: 11px;">Save Link</button>
+                  </div>
+                </form>
+
+                <div id="admin-ql-list" class="space-y-2"></div>
+              </div>
+            </div>
+
+            <div class="mantine-Paper space-y-4">
+              <div class="uppercase-label">SMTP / Outgoing Mail</div>
+              <div class="grid-fields-2">
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">SMTP Host</label>
+                  <input type="text" value="mail.winterfur.org" class="mantine-Input" />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Port</label>
+                  <input type="number" value="587" class="mantine-Input" />
+                </div>
+              </div>
+              <div class="grid-fields-2">
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Sender Name</label>
+                  <input type="text" value="WinterFur Portal" class="mantine-Input" />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-white" style="display: block; margin-bottom: 4px;">Sender Email</label>
+                  <input type="email" value="noreply@winterfur.org" class="mantine-Input" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal: NDA -->
+  <div id="nda-modal" class="hidden" style="position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: 16px;">
+    <div class="mantine-Paper" style="max-width: 550px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div class="flex items-center justify-between border-b" style="padding-bottom: 12px; border-color: var(--mantine-color-dark-4);">
+        <div>
+          <h3 class="text-base font-bold text-white">Volunteer Agreement & NDA</h3>
+          <p class="text-xs text-muted">Version 2.1 • Effective for WinterFur 2027</p>
+        </div>
+        <button type="button" onclick="openNdaModal(false)" style="background: none; border: none; color: #fff; font-size: 20px; cursor: pointer;">×</button>
+      </div>
+      <div class="text-xs text-muted space-y-3" style="padding: 16px 0; line-height: 1.5; max-height: 280px; overflow-y: auto;">
+        <p><strong class="text-white">1. Confidentiality:</strong> You agree to treat all attendee data, internal planning and event details strictly confidentially.</p>
+        <p><strong class="text-white">2. Data Protection:</strong> Personal data may only be accessed for your assigned tasks.</p>
+        <p><strong class="text-white">3. Code of Conduct:</strong> You represent WinterFur and adhere to all safety guidelines.</p>
+      </div>
+      <div class="flex items-center justify-between pt-3 border-t">
+        <span class="text-xs text-muted">Signed by <strong class="text-white">Kodiak</strong></span>
+        <button type="button" onclick="openNdaModal(false)" class="mantine-Button-default">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let hasBadge = true;
+    let twoFAEnabled = true;
+    let selectedLanguages = ['German', 'English'];
+    let avatarDataUrl = '';
+
+    function switchPage(page) {
+      ['profile', 'crew', 'admin'].forEach(p => {
+        const pageEl = document.getElementById('page-' + p);
+        const navEl = document.getElementById('nav-' + p);
+        if (pageEl) pageEl.classList.toggle('hidden', p !== page);
+        if (navEl) navEl.setAttribute('data-active', p === page ? 'true' : 'false');
+      });
+    }
+
+    function setEditMode(editing) {
+      document.getElementById('profile-view').classList.toggle('hidden', editing);
+      document.getElementById('profile-edit').classList.toggle('hidden', !editing);
+      document.getElementById('edit-btn').classList.toggle('hidden', editing);
+    }
+
+    function saveProfile(e) {
+      e.preventDefault();
+      const nick = document.getElementById('input-nickname').value.trim();
+      const telegram = document.getElementById('input-telegram').value.trim();
+      const species = document.getElementById('input-species').value;
+      const pronouns = document.getElementById('input-pronouns').value.trim();
+      const first = document.getElementById('input-firstname').value.trim();
+      const last = document.getElementById('input-lastname').value.trim();
+      const dob = document.getElementById('input-dob').value;
+      const email = document.getElementById('input-email').value.trim();
+      const phone = document.getElementById('input-phone').value.trim();
+      const street = document.getElementById('input-street').value.trim();
+      const zip = document.getElementById('input-zip').value.trim();
+      const city = document.getElementById('input-city').value.trim();
+      const country = document.getElementById('input-country').value.trim();
+
+      // Update View Mode
+      document.getElementById('view-nickname').textContent = nick;
+      document.getElementById('view-telegram').textContent = telegram || '—';
+      document.getElementById('view-species').textContent = species || '—';
+      document.getElementById('view-pronouns').textContent = pronouns || '—';
+      document.getElementById('view-firstname').textContent = first;
+      document.getElementById('view-lastname').textContent = last;
+      document.getElementById('view-dob').textContent = dob || '—';
+      document.getElementById('view-email').textContent = email;
+      document.getElementById('view-phone').textContent = phone;
+      document.getElementById('view-street').textContent = street;
+      document.getElementById('view-city').textContent = `${zip} ${city}`;
+      document.getElementById('view-country').textContent = country;
+
+      // Update Header
+      const initials = nick.slice(0, 2).toUpperCase();
+      document.getElementById('header-user-name').textContent = nick;
+      document.getElementById('header-user-initials').textContent = initials;
+      document.getElementById('view-avatar-initials').textContent = initials;
+      document.getElementById('edit-avatar-initials').textContent = initials;
+
+      applySavedAvatar();
+      setEditMode(false);
+    }
+
+    function renderLanguages() {
+      const container = document.getElementById('view-languages');
+      if (container) {
+        container.innerHTML = selectedLanguages.map(l => `<span class="mantine-Pill">${l}</span>`).join('');
+      }
+    }
+
+    function handleAvatarUpload(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        avatarDataUrl = e.target.result;
+        updateAvatarPreview();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearAvatar() {
+      avatarDataUrl = '';
+      updateAvatarPreview();
+    }
+
+    function updateAvatarPreview() {
+      const img = document.getElementById('edit-avatar-img');
+      const init = document.getElementById('edit-avatar-initials');
+      const btn = document.getElementById('remove-avatar-btn');
+      if (avatarDataUrl) {
+        img.src = avatarDataUrl;
+        img.classList.remove('hidden');
+        init.classList.add('hidden');
+        btn.classList.remove('hidden');
+      } else {
+        img.src = '';
+        img.classList.add('hidden');
+        init.classList.remove('hidden');
+        btn.classList.add('hidden');
+      }
+    }
+
+    function applySavedAvatar() {
+      ['view-avatar-img', 'header-avatar-img'].forEach(id => {
+        const el = document.getElementById(id);
+        if (avatarDataUrl) {
+          el.src = avatarDataUrl;
+          el.classList.remove('hidden');
+        } else {
+          el.src = '';
+          el.classList.add('hidden');
+        }
+      });
+      ['view-avatar-initials', 'header-user-initials'].forEach(id => {
+        const el = document.getElementById(id);
+        if (avatarDataUrl) el.classList.add('hidden');
+        else el.classList.remove('hidden');
+      });
+    }
+
+    function togglePasswordForm(show) {
+      document.getElementById('password-form').classList.toggle('hidden', !show);
+      document.getElementById('change-pw-btn').classList.toggle('hidden', show);
+    }
+
+    function savePassword(e) {
+      e.preventDefault();
+      document.getElementById('password-subtext').textContent = 'Last updated just now';
+      togglePasswordForm(false);
+    }
+
+    function toggleTwoFA() {
+      twoFAEnabled = !twoFAEnabled;
+      const b = document.getElementById('twofa-badge');
+      if (twoFAEnabled) {
+        b.className = 'mantine-Badge-teal';
+        b.textContent = 'Enabled';
+      } else {
+        b.className = 'mantine-Badge-gray';
+        b.textContent = 'Disabled';
+      }
+    }
+
+    let passkeys = [
+      { id: 1, name: 'YubiKey 5 NFC', date: 'Added Oct 12, 2026' },
+      { id: 2, name: 'Windows Hello (Desktop)', date: 'Added Nov 02, 2026' }
+    ];
+
+    function renderPasskeys() {
+      const list = document.getElementById('passkeys-list');
+      const badge = document.getElementById('webauthn-count-badge');
+      if (!list) return;
+
+      badge.textContent = `${passkeys.length} Registered`;
+      badge.className = passkeys.length > 0 ? 'mantine-Badge-teal' : 'mantine-Badge-gray';
+
+      list.innerHTML = passkeys.map(p => `
+        <div class="flex items-center justify-between p-2 rounded" style="background: var(--mantine-color-dark-6); border: 1px solid var(--mantine-color-dark-4); padding: 8px 12px;">
+          <div>
+            <div class="text-sm font-semibold text-white">${p.name}</div>
+            <div class="text-xs text-muted">${p.date}</div>
+          </div>
+          <button type="button" onclick="removePasskey(${p.id})" class="text-red text-xs" style="background: none; border: none; cursor: pointer;">Remove</button>
+        </div>
+      `).join('');
+    }
+
+    function togglePasskeyForm(show) {
+      document.getElementById('passkey-form').classList.toggle('hidden', !show);
+      document.getElementById('add-passkey-btn').classList.toggle('hidden', show);
+    }
+
+    function addPasskey(e) {
+      e.preventDefault();
+      const name = document.getElementById('input-passkey-name').value.trim();
+      if (!name) return;
+      passkeys.push({ id: Date.now(), name, date: 'Added just now' });
+      document.getElementById('input-passkey-name').value = '';
+      togglePasskeyForm(false);
+      renderPasskeys();
+    }
+
+    function removePasskey(id) {
+      passkeys = passkeys.filter(p => p.id !== id);
+      renderPasskeys();
+    }
+
+    function toggleBadgeState() {
+      hasBadge = !hasBadge;
+      document.getElementById('view-badge').textContent = hasBadge ? '#0142' : '—';
+      document.getElementById('badge-toggle-btn').textContent = hasBadge ? 'Registered (#0142)' : 'Unregistered';
+    }
+
+    let quickLinks = [
+      { id: 1, icon: '📚', title: 'Handbook', url: 'https://wiki.winterfur.org' },
+      { id: 2, icon: '☁️', title: 'Nextcloud', url: 'https://cloud.winterfur.org' },
+      { id: 3, icon: '💬', title: 'Telegram Chat', url: 'https://t.me/+winterfur_crew' }
+    ];
+
+    function renderQuickLinks() {
+      const pills = document.getElementById('crew-quicklinks-pills');
+      if (pills) {
+        pills.innerHTML = quickLinks.map(q => `
+          <a href="${q.url}" target="_blank" class="mantine-Pill" style="text-decoration: none;">
+            <span>${q.icon}</span>
+            <span>${q.title}</span>
+            <span style="opacity: 0.5;">↗</span>
+          </a>
+        `).join('');
+      }
+
+      const list = document.getElementById('admin-ql-list');
+      if (list) {
+        list.innerHTML = quickLinks.map((q, idx) => `
+          <div class="flex items-center justify-between p-2 rounded" style="background: var(--mantine-color-dark-6); border: 1px solid var(--mantine-color-dark-4); padding: 8px 12px;">
+            <div>
+              <div class="text-sm font-semibold text-white">${q.icon} ${q.title}</div>
+              <div class="text-xs text-muted" style="font-family: monospace;">${q.url}</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="removeQuickLink(${q.id})" class="text-red text-xs" style="background: none; border: none; cursor: pointer;">Remove</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    function toggleAddQuickLinkForm(show) {
+      document.getElementById('add-ql-form').classList.toggle('hidden', !show);
+      document.getElementById('add-ql-btn').classList.toggle('hidden', show);
+    }
+
+    function saveAdminQuickLink(e) {
+      e.preventDefault();
+      const icon = document.getElementById('ql-input-icon').value.trim() || '🔗';
+      const title = document.getElementById('ql-input-title').value.trim();
+      const url = document.getElementById('ql-input-url').value.trim();
+      if (!title || !url) return;
+      quickLinks.push({ id: Date.now(), icon, title, url });
+      document.getElementById('ql-input-title').value = '';
+      document.getElementById('ql-input-url').value = '';
+      toggleAddQuickLinkForm(false);
+      renderQuickLinks();
+    }
+
+    function removeQuickLink(id) {
+      quickLinks = quickLinks.filter(q => q.id !== id);
+      renderQuickLinks();
+    }
+
+    function openNdaModal(show) {
+      const modal = document.getElementById('nda-modal');
+      if (modal) modal.style.display = show ? 'flex' : 'none';
+    }
+
+    // Init
+    renderLanguages();
+    renderPasskeys();
+    renderQuickLinks();
+  </script>
+</body>
+</html>

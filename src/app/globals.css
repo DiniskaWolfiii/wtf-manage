@@ -1,0 +1,11 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: var(--mantine-color-dark-8, #141517);
+  color: var(--mantine-color-dark-0, #c1c2c5);
+}
+
+* {
+  box-sizing: border-box;
+}

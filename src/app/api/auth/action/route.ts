@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
-  const targetUrl = buildKeycloakActionUrl(action, appUrl);
+  const targetUrl = buildKeycloakActionUrl(action, `${appUrl}/profile`);
 
   return NextResponse.redirect(targetUrl);
 }

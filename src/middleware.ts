@@ -16,7 +16,8 @@ export default auth((req) => {
   // Option A: Strict Gate - redirect unauthenticated users to login
   if (!isAuth) {
     const signInUrl = new URL('/api/auth/signin', req.nextUrl.origin);
-    signInUrl.searchParams.set('callbackUrl', req.nextUrl.href);
+    const targetPath = pathname === '/' ? '/profile' : pathname;
+    signInUrl.searchParams.set('callbackUrl', targetPath);
     return Response.redirect(signInUrl);
   }
 });

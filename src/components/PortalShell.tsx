@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   AppShell,
   Group,
@@ -35,6 +36,10 @@ import {
   IconFileText,
   IconLogout,
 } from '@tabler/icons-react';
+import type { UserProfileData } from '@/lib/keycloak';
+
+let cachedProfile: UserProfileData | null = null;
+let cachedSecurity: SecurityData | null = null;
 
 interface QuickLink {
   id: number;
@@ -66,39 +71,70 @@ export interface SessionUser {
   roles: string[];
 }
 
-export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'crew' | 'admin'>('profile');
+export function PortalShell({
+  sessionUser,
+  initialProfile,
+  initialSecurity,
+}: {
+  sessionUser?: SessionUser;
+  initialProfile?: UserProfileData;
+  initialSecurity?: SecurityData;
+}) {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const activeTab: 'profile' | 'crew' | 'admin' = pathname.startsWith('/crew')
+    ? 'crew'
+    : pathname.startsWith('/admin')
+    ? 'admin'
+    : 'profile';
+
+  if (initialProfile && !cachedProfile) {
+    cachedProfile = initialProfile;
+  }
+  if (initialSecurity && !cachedSecurity) {
+    cachedSecurity = initialSecurity;
+  }
+
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(!initialProfile && !cachedProfile);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Live Security Data from Keycloak
-  const [security, setSecurity] = useState<SecurityData>({
-    hasPassword: true,
-    passwordUpdated: 'Configured',
-    hasTotp: false,
-    passkeys: [],
-  });
-  const [isLoadingSecurity, setIsLoadingSecurity] = useState(true);
+  const [security, setSecurity] = useState<SecurityData>(
+    initialSecurity || cachedSecurity || {
+      hasPassword: true,
+      passwordUpdated: 'Configured',
+      hasTotp: false,
+      passkeys: [],
+    }
+  );
+  const [isLoadingSecurity, setIsLoadingSecurity] = useState(!initialSecurity && !cachedSecurity);
 
-  // Profile Form State initialized with session user or defaults
-  const [profile, setProfile] = useState({
-    nickname: sessionUser?.username || sessionUser?.name || 'Kodiak',
-    telegram: '@KodiakPolar',
-    species: 'Polar Bear',
-    pronouns: 'he/him',
-    firstName: sessionUser?.name?.split(' ')[0] || 'Lukas',
-    lastName: sessionUser?.name?.split(' ').slice(1).join(' ') || 'Winterstein',
-    dob: '1998-02-14',
-    email: sessionUser?.email || 'lukas.winterstein@example.com',
-    phone: '+49 170 9823411',
-    street: 'Schneegipfelweg 42',
-    zip: '80331',
-    city: 'München',
-    country: 'Germany',
-    avatarUrl: sessionUser?.image || '',
+  // Profile Form State initialized with server-fetched profile, client cache, or session
+  const [profile, setProfile] = useState<UserProfileData>(() => {
+    if (initialProfile) return initialProfile;
+    if (cachedProfile) return cachedProfile;
+    return {
+      id: sessionUser?.id || '',
+      username: sessionUser?.username || '',
+      firstName: sessionUser?.name?.split(' ')[0] || '',
+      lastName: sessionUser?.name?.split(' ').slice(1).join(' ') || '',
+      email: sessionUser?.email || '',
+      nickname: sessionUser?.name || sessionUser?.username || 'Kodiak',
+      telegram: '@kodiak',
+      species: 'Polar Bear',
+      pronouns: 'he/him',
+      phone: '',
+      street: '',
+      zip: '',
+      city: '',
+      country: 'Germany',
+      dob: '',
+      avatarUrl: sessionUser?.image || '',
+    };
   });
 
   const [editForm, setEditForm] = useState({ ...profile });
@@ -113,12 +149,20 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
   const [newQl, setNewQl] = useState({ icon: '🔗', title: '', url: '' });
   const [showAddQl, setShowAddQl] = useState(false);
 
+  // Clean up any lingering query parameters from OAuth/Keycloak callbacks
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   useEffect(() => {
     // 1. Fetch Profile
     fetch('/api/profile')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) {
+          cachedProfile = data;
           setProfile(data);
           setEditForm(data);
         }
@@ -130,7 +174,10 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
     fetch('/api/profile/security')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) setSecurity(data);
+        if (data) {
+          cachedSecurity = data;
+          setSecurity(data);
+        }
       })
       .catch((err) => console.error('Failed to load security info:', err))
       .finally(() => setIsLoadingSecurity(false));
@@ -147,6 +194,7 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
         body: JSON.stringify(editForm),
       });
       if (res.ok) {
+        cachedProfile = { ...editForm };
         setProfile({ ...editForm });
         setIsEditingProfile(false);
         setSaveStatus('Profile saved and synced with WinterFur Identity!');
@@ -285,7 +333,7 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
             label="My Profile"
             leftSection={<IconUser size={18} />}
             active={activeTab === 'profile'}
-            onClick={() => setActiveTab('profile')}
+            onClick={() => router.push('/profile')}
             style={{ borderRadius: 6 }}
           />
 
@@ -296,7 +344,7 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
             label="Crew Dashboard"
             leftSection={<IconPaw size={18} />}
             active={activeTab === 'crew'}
-            onClick={() => setActiveTab('crew')}
+            onClick={() => router.push('/crew')}
             style={{ borderRadius: 6 }}
           />
 
@@ -307,7 +355,7 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
             label="Portal Settings"
             leftSection={<IconSettings size={18} />}
             active={activeTab === 'admin'}
-            onClick={() => setActiveTab('admin')}
+            onClick={() => router.push('/admin')}
             style={{ borderRadius: 6 }}
           />
         </Stack>
@@ -947,15 +995,11 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                             href={q.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            style={{ textDecoration: 'none' }}
+                            className="quick-link-pill"
                           >
-                            <Pill style={{ cursor: 'pointer', padding: '6px 12px' }}>
-                              <Group gap={6}>
-                                <span>{q.icon}</span>
-                                <span>{q.title}</span>
-                                <IconExternalLink size={12} style={{ opacity: 0.6 }} />
-                              </Group>
-                            </Pill>
+                            <span style={{ fontSize: 14, lineHeight: 1 }}>{q.icon}</span>
+                            <span>{q.title}</span>
+                            <IconExternalLink size={12} style={{ opacity: 0.6 }} />
                           </a>
                         ))}
                       </Group>
@@ -980,9 +1024,9 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                           My Crew Roles
                         </Text>
                         <Group gap="xs">
-                          <Pill>IT - Lead</Pill>
-                          <Pill>Venue Relation - Catering</Pill>
-                          <Pill>Con-Ops - Dispatcher</Pill>
+                          <Pill size="md">IT - Lead</Pill>
+                          <Pill size="md">Venue Relation - Catering</Pill>
+                          <Pill size="md">Con-Ops - Dispatcher</Pill>
                         </Group>
                       </div>
 
@@ -993,10 +1037,10 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                           My Skills (FR Managed)
                         </Text>
                         <Group gap="xs">
-                          <Pill>German - Native</Pill>
-                          <Pill>English - B2</Pill>
-                          <Pill>Communication - Advanced</Pill>
-                          <Pill>First Aid - Basic</Pill>
+                          <Pill size="md">German - Native</Pill>
+                          <Pill size="md">English - B2</Pill>
+                          <Pill size="md">Communication - Advanced</Pill>
+                          <Pill size="md">First Aid - Basic</Pill>
                         </Group>
                       </div>
 

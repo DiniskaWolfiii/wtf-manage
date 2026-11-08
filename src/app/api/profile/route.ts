@@ -37,7 +37,6 @@ export async function GET() {
     country: 'Germany',
     dob: '',
     avatarUrl: session.user.image || '',
-    badgeNumber: '#0142',
   };
 
   return NextResponse.json(fallbackProfile);

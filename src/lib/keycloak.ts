@@ -25,7 +25,6 @@ export interface UserProfileData {
   country: string;
   dob: string;
   avatarUrl?: string;
-  badgeNumber?: string;
 }
 
 let cachedAdminToken: { token: string; expiresAt: number } | null = null;
@@ -254,7 +253,6 @@ function mapKeycloakToProfile(data: KeycloakUserProfile): UserProfileData {
     country: getAttr('country') || 'Germany',
     dob: getAttr('dob') || '',
     avatarUrl: getAttr('avatarUrl') || '',
-    badgeNumber: getAttr('badgeNumber') || '#0142',
   };
 }
 

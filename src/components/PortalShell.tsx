@@ -65,7 +65,6 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showPasskeyForm, setShowPasskeyForm] = useState(false);
   const [newPasskeyName, setNewPasskeyName] = useState('');
-  const [hasBadge, setHasBadge] = useState(true);
   const [twoFaEnabled, setTwoFaEnabled] = useState(true);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -221,21 +220,6 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
 
           <Group gap="md">
             <Group gap="xs">
-              <Text size="xs" c="dimmed">
-                Con-Badge:
-              </Text>
-              <Button
-                variant="default"
-                size="xs"
-                onClick={() => setHasBadge(!hasBadge)}
-              >
-                {hasBadge ? 'Registered (#0142)' : 'No Badge'}
-              </Button>
-            </Group>
-
-            <Divider orientation="vertical" />
-
-            <Group gap="xs">
               <Avatar
                 src={profile.avatarUrl || null}
                 radius="xl"
@@ -386,9 +370,6 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                         <Text size="sm" c="dimmed">
                           {profile.species} • {profile.pronouns}
                         </Text>
-                        <Badge color="blue" variant="light" mt="xs">
-                          Attendee #0142
-                        </Badge>
                       </div>
                     </Group>
 
@@ -535,7 +516,7 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                       <Grid gap="md">
                         <Grid.Col span={6}>
                           <TextInput
-                            label="Badge / Nickname"
+                            label="Nickname / Fursona Name"
                             required
                             value={editForm.nickname}
                             onChange={(e) =>

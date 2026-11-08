@@ -2,11 +2,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: wtf-manage
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
+  ingressClassName: traefik
   rules:
     - host: manage.winterfur.org
       http:
@@ -18,8 +15,3 @@ spec:
                 name: wtf-manage
                 port:
                   number: 80
-  tls:
-    - hosts:
-        - manage.winterfur.org
-      secretName: wtf-manage-tls
-

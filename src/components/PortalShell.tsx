@@ -44,9 +44,17 @@ interface QuickLink {
 }
 
 interface Passkey {
-  id: number;
+  id: string;
   name: string;
   date: string;
+}
+
+export interface SecurityData {
+  hasPassword: boolean;
+  passwordUpdated?: string;
+  hasTotp: boolean;
+  totpLabel?: string;
+  passkeys: Passkey[];
 }
 
 export interface SessionUser {
@@ -62,13 +70,18 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
   const [activeTab, setActiveTab] = useState<'profile' | 'crew' | 'admin'>('profile');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [showPasskeyForm, setShowPasskeyForm] = useState(false);
-  const [newPasskeyName, setNewPasskeyName] = useState('');
-  const [twoFaEnabled, setTwoFaEnabled] = useState(true);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  // Live Security Data from Keycloak
+  const [security, setSecurity] = useState<SecurityData>({
+    hasPassword: true,
+    passwordUpdated: 'Configured',
+    hasTotp: false,
+    passkeys: [],
+  });
+  const [isLoadingSecurity, setIsLoadingSecurity] = useState(true);
 
   // Profile Form State initialized with session user or defaults
   const [profile, setProfile] = useState({
@@ -100,13 +113,8 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
   const [newQl, setNewQl] = useState({ icon: '🔗', title: '', url: '' });
   const [showAddQl, setShowAddQl] = useState(false);
 
-  // Passkeys
-  const [passkeys, setPasskeys] = useState<Passkey[]>([
-    { id: 1, name: 'YubiKey 5 NFC', date: 'Added Oct 12, 2026' },
-    { id: 2, name: 'Windows Hello (Desktop)', date: 'Added Nov 02, 2026' },
-  ]);
-
   useEffect(() => {
+    // 1. Fetch Profile
     fetch('/api/profile')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -117,6 +125,15 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
       })
       .catch((err) => console.error('Failed to load profile:', err))
       .finally(() => setIsLoadingProfile(false));
+
+    // 2. Fetch Live Security Credentials from Keycloak
+    fetch('/api/profile/security')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setSecurity(data);
+      })
+      .catch((err) => console.error('Failed to load security info:', err))
+      .finally(() => setIsLoadingSecurity(false));
   }, []);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -144,19 +161,24 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
     }
   };
 
-  const handleAddPasskey = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPasskeyName.trim()) return;
-    setPasskeys([
-      ...passkeys,
-      { id: Date.now(), name: newPasskeyName.trim(), date: 'Added just now' },
-    ]);
-    setNewPasskeyName('');
-    setShowPasskeyForm(false);
+  const handleTriggerAction = (action: string) => {
+    window.location.href = `/api/auth/action?action=${encodeURIComponent(action)}`;
   };
 
-  const handleRemovePasskey = (id: number) => {
-    setPasskeys(passkeys.filter((p) => p.id !== id));
+  const handleRemovePasskey = async (id: string) => {
+    try {
+      const res = await fetch(`/api/profile/security?credentialId=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setSecurity((prev) => ({
+          ...prev,
+          passkeys: prev.passkeys.filter((p) => p.id !== id),
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to remove passkey:', err);
+    }
   };
 
   const handleAddQuickLink = (e: React.FormEvent) => {
@@ -738,57 +760,17 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                             Password
                           </Text>
                           <Text size="xs" c="dimmed">
-                            Last updated 3 months ago
+                            Last updated: {security.passwordUpdated || 'Configured'}
                           </Text>
                         </div>
                         <Button
                           variant="default"
                           size="xs"
-                          onClick={() => setShowPasswordForm(!showPasswordForm)}
+                          onClick={() => handleTriggerAction('UPDATE_PASSWORD')}
                         >
                           Change
                         </Button>
                       </Group>
-
-                      {showPasswordForm && (
-                        <Box
-                          mt="sm"
-                          p="sm"
-                          style={{
-                            backgroundColor: 'var(--mantine-color-dark-6)',
-                            borderRadius: 6,
-                          }}
-                        >
-                          <Stack gap="xs">
-                            <TextInput
-                              label="Current Password"
-                              type="password"
-                              size="xs"
-                            />
-                            <TextInput
-                              label="New Password"
-                              type="password"
-                              size="xs"
-                            />
-                            <Group justify="flex-end" gap="xs" mt="xs">
-                              <Button
-                                variant="default"
-                                size="xs"
-                                onClick={() => setShowPasswordForm(false)}
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                variant="filled"
-                                size="xs"
-                                onClick={() => setShowPasswordForm(false)}
-                              >
-                                Update Password
-                              </Button>
-                            </Group>
-                          </Stack>
-                        </Box>
-                      )}
                     </div>
 
                     <Divider />
@@ -801,23 +783,25 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                             2FA Authenticator
                           </Text>
                           <Badge
-                            color={twoFaEnabled ? 'teal' : 'gray'}
+                            color={security.hasTotp ? 'teal' : 'gray'}
                             variant="light"
                             size="sm"
                           >
-                            {twoFaEnabled ? 'Enabled' : 'Disabled'}
+                            {security.hasTotp ? 'Enabled' : 'Disabled'}
                           </Badge>
                         </Group>
                         <Text size="xs" c="dimmed">
-                          TOTP 6-digit codes active
+                          {security.hasTotp
+                            ? security.totpLabel || 'TOTP 6-digit codes active'
+                            : 'Not configured yet'}
                         </Text>
                       </div>
                       <Button
                         variant="default"
                         size="xs"
-                        onClick={() => setTwoFaEnabled(!twoFaEnabled)}
+                        onClick={() => handleTriggerAction('CONFIGURE_TOTP')}
                       >
-                        Configure
+                        {security.hasTotp ? 'Reconfigure' : 'Set Up'}
                       </Button>
                     </Group>
 
@@ -831,8 +815,12 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                             <Text size="sm" fw={600} c="white">
                               Passkeys & Keys
                             </Text>
-                            <Badge color="teal" variant="light" size="sm">
-                              {passkeys.length} Registered
+                            <Badge
+                              color={security.passkeys.length > 0 ? 'teal' : 'gray'}
+                              variant="light"
+                              size="sm"
+                            >
+                              {security.passkeys.length} Registered
                             </Badge>
                           </Group>
                           <Text size="xs" c="dimmed">
@@ -842,77 +830,50 @@ export function PortalShell({ sessionUser }: { sessionUser?: SessionUser }) {
                         <Button
                           variant="default"
                           size="xs"
-                          onClick={() => setShowPasskeyForm(true)}
+                          onClick={() => handleTriggerAction('webauthn-register')}
                         >
                           + Add
                         </Button>
                       </Group>
 
-                      <Stack gap="xs">
-                        {passkeys.map((p) => (
-                          <Paper
-                            key={p.id}
-                            p="xs"
-                            withBorder
-                            style={{
-                              backgroundColor: 'var(--mantine-color-dark-6)',
-                              borderColor: 'var(--mantine-color-dark-4)',
-                            }}
-                          >
-                            <Group justify="space-between">
-                              <div>
-                                <Text size="xs" fw={600} c="white">
-                                  {p.name}
-                                </Text>
-                                <Text size="xs" c="dimmed">
-                                  {p.date}
-                                </Text>
-                              </div>
-                              <ActionIcon
-                                variant="subtle"
-                                color="red"
-                                size="sm"
-                                onClick={() => handleRemovePasskey(p.id)}
-                              >
-                                <IconTrash size={14} />
-                              </ActionIcon>
-                            </Group>
-                          </Paper>
-                        ))}
-                      </Stack>
-
-                      {showPasskeyForm && (
-                        <Box
-                          component="form"
-                          onSubmit={handleAddPasskey}
-                          mt="xs"
-                          p="sm"
-                          style={{
-                            backgroundColor: 'var(--mantine-color-dark-6)',
-                            borderRadius: 6,
-                          }}
-                        >
-                          <TextInput
-                            label="Device Name"
-                            size="xs"
-                            required
-                            placeholder="e.g. YubiKey 5C..."
-                            value={newPasskeyName}
-                            onChange={(e) => setNewPasskeyName(e.target.value)}
-                          />
-                          <Group justify="flex-end" gap="xs" mt="xs">
-                            <Button
-                              variant="default"
-                              size="xs"
-                              onClick={() => setShowPasskeyForm(false)}
+                      {security.passkeys.length === 0 ? (
+                        <Text size="xs" c="dimmed" fs="italic">
+                          No passkeys registered yet. Click &quot;+ Add&quot; to register a YubiKey or Touch ID / Windows Hello.
+                        </Text>
+                      ) : (
+                        <Stack gap="xs">
+                          {security.passkeys.map((p) => (
+                            <Paper
+                              key={p.id}
+                              p="xs"
+                              withBorder
+                              style={{
+                                backgroundColor: 'var(--mantine-color-dark-6)',
+                                borderColor: 'var(--mantine-color-dark-4)',
+                              }}
                             >
-                              Cancel
-                            </Button>
-                            <Button variant="filled" size="xs" type="submit">
-                              Register
-                            </Button>
-                          </Group>
-                        </Box>
+                              <Group justify="space-between">
+                                <div>
+                                  <Text size="xs" fw={600} c="white">
+                                    {p.name}
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {p.date}
+                                  </Text>
+                                </div>
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="red"
+                                  size="sm"
+                                  title="Remove passkey"
+                                  onClick={() => handleRemovePasskey(p.id)}
+                                >
+                                  <IconTrash size={14} />
+                                </ActionIcon>
+                              </Group>
+                            </Paper>
+                          ))}
+                        </Stack>
                       )}
                     </div>
                   </Stack>

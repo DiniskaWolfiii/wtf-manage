@@ -27,6 +27,25 @@ export interface UserProfileData {
   avatarUrl?: string;
 }
 
+export interface KeycloakCredential {
+  id: string;
+  type: string;
+  userLabel?: string;
+  createdDate?: number;
+}
+
+export interface SecurityStatus {
+  hasPassword: boolean;
+  passwordUpdated?: string;
+  hasTotp: boolean;
+  totpLabel?: string;
+  passkeys: Array<{
+    id: string;
+    name: string;
+    date: string;
+  }>;
+}
+
 let cachedAdminToken: { token: string; expiresAt: number } | null = null;
 
 function getKeycloakUrls() {
@@ -254,5 +273,112 @@ function mapKeycloakToProfile(data: KeycloakUserProfile): UserProfileData {
     dob: getAttr('dob') || '',
     avatarUrl: getAttr('avatarUrl') || '',
   };
+}
+
+/**
+ * Fetch credentials (passwords, OTP, WebAuthn) for a user from Keycloak Admin API.
+ */
+export async function fetchUserCredentials(userId: string): Promise<SecurityStatus> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+
+  const fallback: SecurityStatus = {
+    hasPassword: true,
+    passwordUpdated: 'Configured',
+    hasTotp: false,
+    passkeys: [],
+  };
+
+  if (!adminToken) return fallback;
+
+  try {
+    const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${userId}/credentials`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      console.warn(`[Keycloak] Fetch credentials status: ${res.status}`);
+      return fallback;
+    }
+
+    const creds: KeycloakCredential[] = await res.json();
+
+    const passwordCred = creds.find((c) => c.type === 'password');
+    const otpCred = creds.find((c) => c.type === 'otp');
+    const passkeyCreds = creds.filter(
+      (c) => c.type === 'webauthn' || c.type === 'webauthn-passwordless'
+    );
+
+    return {
+      hasPassword: !!passwordCred,
+      passwordUpdated: passwordCred?.createdDate
+        ? new Date(passwordCred.createdDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          })
+        : 'Configured',
+      hasTotp: !!otpCred,
+      totpLabel: otpCred?.userLabel || 'Authenticator App',
+      passkeys: passkeyCreds.map((p) => ({
+        id: p.id,
+        name: p.userLabel || 'WebAuthn Passkey',
+        date: p.createdDate
+          ? new Date(p.createdDate).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            })
+          : 'Registered',
+      })),
+    };
+  } catch (err) {
+    console.error('[Keycloak] Error fetching credentials:', err);
+    return fallback;
+  }
+}
+
+/**
+ * Delete a specific credential (e.g. remove a Passkey) in Keycloak.
+ */
+export async function deleteUserCredential(userId: string, credentialId: string): Promise<boolean> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+
+  if (!adminToken) return false;
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${realm}/users/${userId}/credentials/${credentialId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      }
+    );
+
+    return res.ok || res.status === 204;
+  } catch (err) {
+    console.error('[Keycloak] Error deleting credential:', err);
+    return false;
+  }
+}
+
+/**
+ * Build a Keycloak Action URL (kc_action=UPDATE_PASSWORD, CONFIGURE_TOTP, webauthn-register)
+ */
+export function buildKeycloakActionUrl(action: string, redirectUrl?: string): string {
+  const { issuer } = getKeycloakUrls();
+  const clientId = process.env.KEYCLOAK_CLIENT_ID || 'wtf-manage-test';
+  const targetRedirect = redirectUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://marmelada.wolfiii.gay';
+
+  const authUrl = new URL(`${issuer}/protocol/openid-connect/auth`);
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', 'openid');
+  authUrl.searchParams.set('redirect_uri', targetRedirect);
+  authUrl.searchParams.set('kc_action', action);
+
+  return authUrl.toString();
 }
 

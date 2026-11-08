@@ -2,17 +2,17 @@ name: CI / Build & Push Container
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     tags: [ "v*" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-test:
+  test-and-verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -31,8 +31,9 @@ jobs:
         run: npm run build
 
   publish-container:
-    needs: build-and-test
-    if: github.event_name != 'pull_request'
+    needs: test-and-verify
+    # Only publish containers on actual branch pushes / merges (not for open pull requests)
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,14 +53,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
+      - name: Configure Docker Tags (Test vs. Prod)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            # PROD: Push / Merge to 'main' -> :latest
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # PROD: Git release tags -> :v0.0.1
             type=semver,pattern={{version}}
+            # TEST: Push / Merge to 'develop' -> :test
+            type=raw,value=test,enable=${{ github.ref == 'refs/heads/develop' }}
+            # Git commit hash for exact GitOps tracking
             type=sha,format=short
 
       - name: Build and push Docker image
@@ -71,4 +77,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-

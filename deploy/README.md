@@ -9,14 +9,18 @@ This directory contains base Kubernetes manifests and Kustomize overlays for **W
 
 ---
 
-## 1. Container Image Build & Push (CI)
+## 1. Branching Model & Container Images (CI)
 
-Build and push the multi-stage container image (e.g., via GitHub Actions to GitHub Container Registry `ghcr.io`):
+The CI workflow in `.github/workflows/ci.yml` is configured for **Option A (develop -> main)**:
 
-```bash
-docker build -t ghcr.io/diniskawolfiii/wtf-manage:latest .
-docker push ghcr.io/diniskawolfiii/wtf-manage:latest
-```
+* **Develop Branch (`develop`):** Every push to `develop` automatically builds and pushes the image:
+  * `ghcr.io/diniskawolfiii/wtf-manage:test`
+  * Targeted by the `test` overlay (`manage-test.winterfur.org`).
+* **Main Branch (`main`):** Merging a PR into `main` automatically builds and pushes:
+  * `ghcr.io/diniskawolfiii/wtf-manage:latest`
+  * Targeted by the `prod` overlay (`manage.winterfur.org`).
+* **Git Releases (`v*` tags):** Tagging a release (`git tag v0.0.1`) publishes semver-tagged images (e.g. `:v0.0.1`).
+* **Pull Requests:** PRs to `main` or `develop` trigger automatic linting and test builds (`npm run build`) to ensure code quality without publishing images.
 
 ---
 

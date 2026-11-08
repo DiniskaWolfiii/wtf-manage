@@ -16,6 +16,10 @@ configMapGenerator:
       - KEYCLOAK_ISSUER=https://identity.winterfur.org/realms/winterfur-test
       - KEYCLOAK_CLIENT_ID=wtf-manage-test
 
+images:
+  - name: ghcr.io/diniskawolfiii/wtf-manage
+    newTag: test
+
 patches:
   - target:
       kind: Ingress

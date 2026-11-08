@@ -14,3 +14,7 @@ configMapGenerator:
       - KEYCLOAK_ISSUER=https://identity.winterfur.org/realms/winterfur
       - KEYCLOAK_CLIENT_ID=wtf-manage
 
+images:
+  - name: ghcr.io/diniskawolfiii/wtf-manage
+    newTag: latest
+

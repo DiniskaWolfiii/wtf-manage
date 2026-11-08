@@ -13,6 +13,8 @@ configMapGenerator:
     literals:
       - NODE_ENV=production
       - NEXT_PUBLIC_APP_URL=https://manage-test.winterfur.org
+      - AUTH_URL=https://manage-test.winterfur.org
+      - AUTH_TRUST_HOST="true"
       - KEYCLOAK_ISSUER=https://identity.winterfur.org/realms/winterfur-test
       - KEYCLOAK_CLIENT_ID=wtf-manage-test
 

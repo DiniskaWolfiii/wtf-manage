@@ -251,6 +251,7 @@ export function PortalShell({
       setConventionName(updated.conventionName);
       setQuickLinks(updated.quickLinks);
       setSettingsStatus({ type: 'success', text: successText });
+      router.refresh();
       return true;
     } catch (err) {
       console.error('Failed to save settings:', err);

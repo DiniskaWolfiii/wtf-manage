@@ -25,7 +25,8 @@ function parseJsonValue<T>(raw: unknown, fallback: T): T {
     try {
       return JSON.parse(raw) as T;
     } catch {
-      return fallback;
+      // mysql2 already parses JSON string columns into plain JS strings
+      return raw as unknown as T;
     }
   }
   return raw as T;
@@ -92,6 +93,8 @@ export async function getPortalSettings(): Promise<PortalSettings> {
         const parsed = parseJsonValue<unknown>(row.setting_value, conventionName);
         if (typeof parsed === 'string' && parsed.trim()) {
           conventionName = parsed.trim();
+        } else if (typeof row.setting_value === 'string' && row.setting_value.trim()) {
+          conventionName = row.setting_value.trim();
         }
       } else if (row.setting_key === 'quickLinks') {
         const parsed = parseJsonValue<unknown>(row.setting_value, quickLinks);

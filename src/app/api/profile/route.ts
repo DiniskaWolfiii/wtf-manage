@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { fetchKeycloakUser, updateKeycloakUser, UserProfileData } from '@/lib/keycloak';
+import { getServerAccessToken } from '@/lib/server-auth';
+import { sanitizeProfileUpdate } from '@/lib/validation';
 
 export async function GET() {
   const session = await auth();
@@ -10,7 +12,7 @@ export async function GET() {
   }
 
   const userId = session.user.id;
-  const accessToken = (session as unknown as { accessToken?: string }).accessToken;
+  const accessToken = await getServerAccessToken();
 
   // Try to fetch real profile from Keycloak
   const profile = await fetchKeycloakUser(userId, accessToken);
@@ -50,11 +52,16 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const body: Partial<UserProfileData> = await req.json();
-    const userId = session.user.id;
-    const accessToken = (session as unknown as { accessToken?: string }).accessToken;
+    const rawBody: unknown = await req.json();
+    const sanitizedBody = sanitizeProfileUpdate(rawBody);
+    if (!sanitizedBody) {
+      return NextResponse.json({ error: 'Invalid profile payload' }, { status: 400 });
+    }
 
-    const success = await updateKeycloakUser(userId, body, accessToken);
+    const userId = session.user.id;
+    const accessToken = await getServerAccessToken();
+
+    const success = await updateKeycloakUser(userId, sanitizedBody, accessToken);
 
     return NextResponse.json({
       success,

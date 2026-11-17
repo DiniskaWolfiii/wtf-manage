@@ -1,5 +1,7 @@
 import { auth } from '@/auth';
 import { fetchKeycloakUser, fetchUserCredentials } from '@/lib/keycloak';
+import { getServerAccessToken } from '@/lib/server-auth';
+import { getIdentityDisplayConfig, getPortalSettings } from '@/lib/settings';
 import { PortalShell } from '@/components/PortalShell';
 import { redirect } from 'next/navigation';
 
@@ -10,11 +12,18 @@ export default async function AdminPage() {
     redirect('/api/auth/signin?callbackUrl=/admin');
   }
 
-  const accessToken = (session as unknown as { accessToken?: string }).accessToken;
-  const [initialProfile, initialSecurity] = await Promise.all([
+  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
+  if (!roles.includes('winterfur-admin')) {
+    redirect('/profile');
+  }
+
+  const accessToken = await getServerAccessToken();
+  const [initialProfile, initialSecurity, initialSettings] = await Promise.all([
     fetchKeycloakUser(session.user.id, accessToken),
     fetchUserCredentials(session.user.id),
+    getPortalSettings(),
   ]);
+  const identityConfig = getIdentityDisplayConfig();
 
   const user = {
     id: session.user.id,
@@ -30,6 +39,8 @@ export default async function AdminPage() {
       sessionUser={user}
       initialProfile={initialProfile || undefined}
       initialSecurity={initialSecurity}
+      initialSettings={initialSettings}
+      identityConfig={identityConfig}
     />
   );
 }

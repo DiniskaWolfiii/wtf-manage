@@ -21,13 +21,17 @@ import {
   Stack,
   Pill,
   Loader,
+  Burger,
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import {
   IconUser,
   IconPaw,
   IconSettings,
   IconExternalLink,
   IconTrash,
+  IconArrowUp,
+  IconArrowDown,
   IconPlus,
   IconCheck,
   IconKey,
@@ -37,16 +41,18 @@ import {
   IconLogout,
 } from '@tabler/icons-react';
 import type { UserProfileData } from '@/lib/keycloak';
-
-let cachedProfile: UserProfileData | null = null;
-let cachedSecurity: SecurityData | null = null;
-
-interface QuickLink {
-  id: number;
-  icon: string;
-  title: string;
-  url: string;
-}
+import {
+  DEFAULT_PORTAL_SETTINGS,
+  type IdentityDisplayConfig,
+  type PortalSettings,
+  type QuickLink,
+} from '@/lib/portal-config';
+import {
+  ALLOWED_AVATAR_MIME_TYPES,
+  MAX_AVATAR_BYTES,
+  getSafeAvatarUrl,
+  getSafeExternalUrl,
+} from '@/lib/validation';
 
 interface Passkey {
   id: string;
@@ -75,48 +81,46 @@ export function PortalShell({
   sessionUser,
   initialProfile,
   initialSecurity,
+  initialSettings,
+  identityConfig,
 }: {
   sessionUser?: SessionUser;
   initialProfile?: UserProfileData;
   initialSecurity?: SecurityData;
+  initialSettings?: PortalSettings;
+  identityConfig?: IdentityDisplayConfig;
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
 
   const activeTab: 'profile' | 'crew' | 'admin' = pathname.startsWith('/crew')
     ? 'crew'
-    : pathname.startsWith('/admin')
+    : pathname.startsWith('/admin') && isAdmin
     ? 'admin'
     : 'profile';
 
-  if (initialProfile && !cachedProfile) {
-    cachedProfile = initialProfile;
-  }
-  if (initialSecurity && !cachedSecurity) {
-    cachedSecurity = initialSecurity;
-  }
-
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(!initialProfile && !cachedProfile);
+  const [mobileNavOpened, { toggle: toggleMobileNav, close: closeMobileNav }] = useDisclosure(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(!initialProfile);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Live Security Data from Keycloak
   const [security, setSecurity] = useState<SecurityData>(
-    initialSecurity || cachedSecurity || {
+    initialSecurity || {
       hasPassword: true,
       passwordUpdated: 'Configured',
       hasTotp: false,
       passkeys: [],
     }
   );
-  const [isLoadingSecurity, setIsLoadingSecurity] = useState(!initialSecurity && !cachedSecurity);
+  const [isLoadingSecurity, setIsLoadingSecurity] = useState(!initialSecurity);
 
-  // Profile Form State initialized with server-fetched profile, client cache, or session
+  // Profile Form State initialized with server-fetched profile or session
   const [profile, setProfile] = useState<UserProfileData>(() => {
     if (initialProfile) return initialProfile;
-    if (cachedProfile) return cachedProfile;
     return {
       id: sessionUser?.id || '',
       username: sessionUser?.username || '',
@@ -139,15 +143,19 @@ export function PortalShell({
 
   const [editForm, setEditForm] = useState({ ...profile });
 
-  // Quick Links State
-  const [quickLinks, setQuickLinks] = useState<QuickLink[]>([
-    { id: 1, icon: '💬', title: 'Telegram Crew Chat', url: 'https://t.me/joinchat/example' },
-    { id: 2, icon: '📁', title: 'Nextcloud Con-Drive', url: 'https://cloud.winterfur.org' },
-    { id: 3, icon: '📋', title: 'Shift Schedule (Ops)', url: 'https://shifts.winterfur.org' },
-  ]);
+  // Portal Settings & Quick Links State (loaded from MySQL via server props)
+  const [conventionName, setConventionName] = useState(
+    initialSettings?.conventionName ?? DEFAULT_PORTAL_SETTINGS.conventionName
+  );
+  const [quickLinks, setQuickLinks] = useState<QuickLink[]>(
+    initialSettings?.quickLinks ?? DEFAULT_PORTAL_SETTINGS.quickLinks
+  );
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [newQl, setNewQl] = useState({ icon: '🔗', title: '', url: '' });
   const [showAddQl, setShowAddQl] = useState(false);
+  const [quickLinkUrlError, setQuickLinkUrlError] = useState<string | null>(null);
 
   // Clean up any lingering query parameters from OAuth/Keycloak callbacks
   useEffect(() => {
@@ -162,7 +170,6 @@ export function PortalShell({
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) {
-          cachedProfile = data;
           setProfile(data);
           setEditForm(data);
         }
@@ -175,7 +182,6 @@ export function PortalShell({
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) {
-          cachedSecurity = data;
           setSecurity(data);
         }
       })
@@ -194,7 +200,6 @@ export function PortalShell({
         body: JSON.stringify(editForm),
       });
       if (res.ok) {
-        cachedProfile = { ...editForm };
         setProfile({ ...editForm });
         setIsEditingProfile(false);
         setSaveStatus('Profile saved and synced with WinterFur Identity!');
@@ -229,19 +234,71 @@ export function PortalShell({
     }
   };
 
-  const handleAddQuickLink = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newQl.title.trim() || !newQl.url.trim()) return;
-    setQuickLinks([
-      ...quickLinks,
-      { id: Date.now(), icon: newQl.icon || '🔗', title: newQl.title.trim(), url: newQl.url.trim() },
-    ]);
-    setNewQl({ icon: '🔗', title: '', url: '' });
-    setShowAddQl(false);
+  const persistSettings = async (payload: Partial<PortalSettings>, successText: string) => {
+    setIsSavingSettings(true);
+    setSettingsStatus(null);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        setSettingsStatus({ type: 'error', text: 'Failed to save portal settings.' });
+        return false;
+      }
+      const updated = (await res.json()) as PortalSettings;
+      setConventionName(updated.conventionName);
+      setQuickLinks(updated.quickLinks);
+      setSettingsStatus({ type: 'success', text: successText });
+      return true;
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      setSettingsStatus({ type: 'error', text: 'Error saving portal settings.' });
+      return false;
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
-  const handleRemoveQuickLink = (id: number) => {
-    setQuickLinks(quickLinks.filter((q) => q.id !== id));
+  const handleSaveGeneralSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!conventionName.trim()) return;
+    await persistSettings({ conventionName: conventionName.trim() }, 'General configuration saved.');
+  };
+
+  const handleAddQuickLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQl.title.trim()) return;
+    const safeUrl = getSafeExternalUrl(newQl.url);
+    if (!safeUrl) {
+      setQuickLinkUrlError('Please enter a valid URL starting with https:// or http://');
+      return;
+    }
+    setQuickLinkUrlError(null);
+    const nextLinks = [
+      ...quickLinks,
+      { id: Date.now(), icon: newQl.icon || '🔗', title: newQl.title.trim(), url: safeUrl },
+    ];
+    const ok = await persistSettings({ quickLinks: nextLinks }, 'Quick link added.');
+    if (ok) {
+      setNewQl({ icon: '🔗', title: '', url: '' });
+      setShowAddQl(false);
+    }
+  };
+
+  const handleRemoveQuickLink = async (id: number) => {
+    const nextLinks = quickLinks.filter((q) => q.id !== id);
+    await persistSettings({ quickLinks: nextLinks }, 'Quick link removed.');
+  };
+
+  const handleMoveQuickLink = async (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= quickLinks.length) return;
+    const nextLinks = [...quickLinks];
+    const [moved] = nextLinks.splice(index, 1);
+    nextLinks.splice(targetIndex, 0, moved);
+    await persistSettings({ quickLinks: nextLinks }, 'Quick links order updated.');
   };
 
   const initials = profile.nickname.slice(0, 2).toUpperCase();
@@ -249,7 +306,7 @@ export function PortalShell({
   return (
     <AppShell
       header={{ height: 60 }}
-      navbar={{ width: 260, breakpoint: 'sm' }}
+      navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !mobileNavOpened } }}
       styles={{
         main: {
           backgroundColor: 'var(--mantine-color-dark-8)',
@@ -267,6 +324,13 @@ export function PortalShell({
       >
         <Group h="100%" px="lg" justify="space-between">
           <Group gap="sm">
+            <Burger
+              opened={mobileNavOpened}
+              onClick={toggleMobileNav}
+              hiddenFrom="sm"
+              size="sm"
+              aria-label="Toggle navigation"
+            />
             <Box
               style={{
                 width: 32,
@@ -291,11 +355,11 @@ export function PortalShell({
           <Group gap="md">
             <Group gap="xs">
               <Avatar
-                src={profile.avatarUrl || null}
+                src={getSafeAvatarUrl(profile.avatarUrl)}
                 radius="xl"
                 size={32}
                 style={{
-                  backgroundColor: 'var(--mantine-primary-filled, #15aabf)',
+                  backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
                   color: '#ffffff',
                   fontWeight: 700,
                   fontSize: 12,
@@ -326,7 +390,6 @@ export function PortalShell({
       <AppShell.Navbar
         p="md"
         style={{
-          width: 260,
           backgroundColor: 'var(--mantine-color-dark-7)',
           borderRight: '1px solid var(--mantine-color-dark-4)',
         }}
@@ -340,7 +403,10 @@ export function PortalShell({
               label="My Profile"
               leftSection={<IconUser size={18} />}
               active={activeTab === 'profile'}
-              onClick={() => router.push('/profile')}
+              onClick={() => {
+                closeMobileNav();
+                router.push('/profile');
+              }}
             />
           </div>
 
@@ -352,21 +418,29 @@ export function PortalShell({
               label="Crew Dashboard"
               leftSection={<IconPaw size={18} />}
               active={activeTab === 'crew'}
-              onClick={() => router.push('/crew')}
+              onClick={() => {
+                closeMobileNav();
+                router.push('/crew');
+              }}
             />
           </div>
 
-          <div>
-            <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
-              Administration
+          {isAdmin && (
+            <div>
+              <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+                Administration
+              </div>
+              <NavLink
+                label="Portal Settings"
+                leftSection={<IconSettings size={18} />}
+                active={activeTab === 'admin'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/admin');
+                }}
+              />
             </div>
-            <NavLink
-              label="Portal Settings"
-              leftSection={<IconSettings size={18} />}
-              active={activeTab === 'admin'}
-              onClick={() => router.push('/admin')}
-            />
-          </div>
+          )}
         </Stack>
       </AppShell.Navbar>
 
@@ -379,8 +453,7 @@ export function PortalShell({
         <Box style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
           {/* TAB 1: MY PROFILE */}
           {activeTab === 'profile' && (
-            <div className="space-y-6">
-              <Grid gap={24} align="start">
+            <Grid gap={24} align="start">
                 {/* Left: Profile View / Edit (7 cols) */}
                 <Grid.Col span={{ base: 12, md: 7 }}>
                   <Group justify="space-between" mb="md" style={{ minHeight: 40 }}>
@@ -442,11 +515,11 @@ export function PortalShell({
                           {/* Avatar + Nickname */}
                           <Group gap="md">
                             <Avatar
-                              src={profile.avatarUrl || null}
+                              src={getSafeAvatarUrl(profile.avatarUrl)}
                               size={64}
                               radius="xl"
                               style={{
-                                backgroundColor: 'var(--mantine-primary-filled, #15aabf)',
+                                backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
                                 color: '#ffffff',
                                 border: '2px solid var(--mantine-color-dark-4)',
                                 fontSize: 20,
@@ -563,11 +636,11 @@ export function PortalShell({
                     <Stack gap="md">
                       <Group gap="md">
                         <Avatar
-                          src={editForm.avatarUrl || null}
+                          src={getSafeAvatarUrl(editForm.avatarUrl)}
                           size={48}
                           radius="xl"
                           style={{
-                            backgroundColor: 'var(--mantine-primary-filled, #15aabf)',
+                            backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
                             color: '#ffffff',
                             fontSize: 16,
                             fontWeight: 700,
@@ -589,19 +662,26 @@ export function PortalShell({
                               <input
                                 type="file"
                                 hidden
-                                accept="image/*"
+                                accept="image/png,image/jpeg,image/webp,image/gif"
                                 onChange={(e) => {
                                   const file = e.target.files?.[0];
-                                  if (file) {
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => {
+                                  if (!file) return;
+                                  if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type) || file.size > MAX_AVATAR_BYTES) {
+                                    setSaveStatus('Please select a PNG, JPEG, WEBP, or GIF image under 512 KB.');
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => {
+                                    const safeUrl = getSafeAvatarUrl(ev.target?.result as string);
+                                    if (safeUrl) {
                                       setEditForm({
                                         ...editForm,
-                                        avatarUrl: ev.target?.result as string,
+                                        avatarUrl: safeUrl,
                                       });
-                                    };
-                                    reader.readAsDataURL(file);
-                                  }
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
                                 }}
                               />
                             </Button>
@@ -620,7 +700,7 @@ export function PortalShell({
                       </Group>
 
                       <Grid gap="md">
-                        <Grid.Col span={6}>
+                        <Grid.Col span={{ base: 12, sm: 6 }}>
                           <TextInput
                             label="Nickname / Fursona Name"
                             required
@@ -630,7 +710,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={6}>
+                        <Grid.Col span={{ base: 12, sm: 6 }}>
                           <TextInput
                             label="Telegram Handle"
                             value={editForm.telegram}
@@ -639,7 +719,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={6}>
+                        <Grid.Col span={{ base: 12, sm: 6 }}>
                           <Select
                             label="Species"
                             data={[
@@ -659,7 +739,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={6}>
+                        <Grid.Col span={{ base: 12, sm: 6 }}>
                           <TextInput
                             label="Pronouns"
                             value={editForm.pronouns}
@@ -669,7 +749,7 @@ export function PortalShell({
                           />
                         </Grid.Col>
 
-                        <Grid.Col span={4}>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
                           <TextInput
                             label="First Name"
                             required
@@ -679,7 +759,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={4}>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
                           <TextInput
                             label="Last Name"
                             required
@@ -689,7 +769,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={4}>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
                           <TextInput
                             label="Date of Birth"
                             type="date"
@@ -701,7 +781,7 @@ export function PortalShell({
                           />
                         </Grid.Col>
 
-                        <Grid.Col span={6}>
+                        <Grid.Col span={{ base: 12, sm: 6 }}>
                           <TextInput
                             label="Email Address"
                             type="email"
@@ -712,7 +792,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={6}>
+                        <Grid.Col span={{ base: 12, sm: 6 }}>
                           <TextInput
                             label="Phone Number"
                             type="tel"
@@ -735,7 +815,7 @@ export function PortalShell({
                           />
                         </Grid.Col>
 
-                        <Grid.Col span={4}>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
                           <TextInput
                             label="Postal Code"
                             required
@@ -745,7 +825,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={4}>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
                           <TextInput
                             label="City"
                             required
@@ -755,7 +835,7 @@ export function PortalShell({
                             }
                           />
                         </Grid.Col>
-                        <Grid.Col span={4}>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
                           <Select
                             label="Country"
                             required
@@ -826,6 +906,28 @@ export function PortalShell({
                   </Text>
                 </Box>
 
+                {isLoadingSecurity ? (
+                  <Paper
+                    p={24}
+                    radius="md"
+                    withBorder
+                    style={{
+                      backgroundColor: 'var(--mantine-color-dark-7)',
+                      borderColor: 'var(--mantine-color-dark-4)',
+                      minHeight: 200,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Group gap="md">
+                      <Loader size="sm" color="cyan" />
+                      <Text size="sm" c="dimmed">
+                        Loading security settings...
+                      </Text>
+                    </Group>
+                  </Paper>
+                ) : (
                 <Paper
                   p={24}
                   radius="md"
@@ -964,30 +1066,35 @@ export function PortalShell({
                     </div>
                   </Stack>
                 </Paper>
+                )}
               </Grid.Col>
             </Grid>
-          </div>
-        )}
+          )}
 
           {/* TAB 2: CREW DASHBOARD */}
           {activeTab === 'crew' && (
-            <Stack gap="xl">
-              <Text size="xl" fw={700} c="white">
-                Crew Dashboard
-              </Text>
+            <Stack gap={24}>
+              <div>
+                <Text size="xl" fw={700} c="white">
+                  Crew Dashboard
+                </Text>
+                <Text size="sm" c="dimmed">
+                  Your volunteer agreement, quick links, and assigned crew roles
+                </Text>
+              </div>
 
-              <Grid gap="xl">
+              <Grid gap={24} align="start">
                 {/* Left: NDA & Quick Links */}
                 <Grid.Col span={{ base: 12, md: 6 }}>
-                  <Stack gap="md">
+                  <Stack gap={24}>
                     {/* NDA Card */}
                     <Paper
-                      p="md"
+                      p={24}
                       radius="md"
                       withBorder
                       style={{
                         backgroundColor: 'var(--mantine-color-dark-7)',
-                        borderColor: 'var(--mantine-color-dark-5)',
+                        borderColor: 'var(--mantine-color-dark-4)',
                       }}
                     >
                       <Group justify="space-between">
@@ -1016,31 +1123,35 @@ export function PortalShell({
 
                     {/* Quick Links */}
                     <Paper
-                      p="md"
+                      p={24}
                       radius="md"
                       withBorder
                       style={{
                         backgroundColor: 'var(--mantine-color-dark-7)',
-                        borderColor: 'var(--mantine-color-dark-5)',
+                        borderColor: 'var(--mantine-color-dark-4)',
                       }}
                     >
-                      <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="sm">
+                      <div className="uppercase-label" style={{ marginBottom: 12 }}>
                         Quick Links
-                      </Text>
+                      </div>
                       <Group gap="xs">
-                        {quickLinks.map((q) => (
-                          <a
-                            key={q.id}
-                            href={q.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="quick-link-pill"
-                          >
-                            <span style={{ fontSize: 14, lineHeight: 1 }}>{q.icon}</span>
-                            <span>{q.title}</span>
-                            <IconExternalLink size={12} style={{ opacity: 0.6 }} />
-                          </a>
-                        ))}
+                        {quickLinks.map((q) => {
+                          const safeHref = getSafeExternalUrl(q.url);
+                          if (!safeHref) return null;
+                          return (
+                            <a
+                              key={q.id}
+                              href={safeHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="quick-link-pill"
+                            >
+                              <span style={{ fontSize: 14, lineHeight: 1 }}>{q.icon}</span>
+                              <span>{q.title}</span>
+                              <IconExternalLink size={12} style={{ opacity: 0.6 }} />
+                            </a>
+                          );
+                        })}
                       </Group>
                     </Paper>
                   </Stack>
@@ -1049,19 +1160,19 @@ export function PortalShell({
                 {/* Right: Roles & Skills */}
                 <Grid.Col span={{ base: 12, md: 6 }}>
                   <Paper
-                    p="lg"
+                    p={24}
                     radius="md"
                     withBorder
                     style={{
                       backgroundColor: 'var(--mantine-color-dark-7)',
-                      borderColor: 'var(--mantine-color-dark-5)',
+                      borderColor: 'var(--mantine-color-dark-4)',
                     }}
                   >
                     <Stack gap="md">
                       <div>
-                        <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">
+                        <div className="uppercase-label" style={{ marginBottom: 8 }}>
                           My Crew Roles
-                        </Text>
+                        </div>
                         <Group gap="xs">
                           <Pill size="md">IT - Lead</Pill>
                           <Pill size="md">Venue Relation - Catering</Pill>
@@ -1069,12 +1180,12 @@ export function PortalShell({
                         </Group>
                       </div>
 
-                      <Divider />
+                      <Divider color="var(--mantine-color-dark-4)" />
 
                       <div>
-                        <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">
+                        <div className="uppercase-label" style={{ marginBottom: 8 }}>
                           My Skills (FR Managed)
-                        </Text>
+                        </div>
                         <Group gap="xs">
                           <Pill size="md">German - Native</Pill>
                           <Pill size="md">English - B2</Pill>
@@ -1083,7 +1194,7 @@ export function PortalShell({
                         </Group>
                       </div>
 
-                      <Divider />
+                      <Divider color="var(--mantine-color-dark-4)" />
 
                       <Text size="xs" c="dimmed">
                         Roles and skills are assigned and audited by{' '}
@@ -1097,21 +1208,54 @@ export function PortalShell({
           )}
 
           {/* TAB 3: ADMIN PORTAL SETTINGS */}
-          {activeTab === 'admin' && (
-            <Stack gap="xl">
-              <Text size="xl" fw={700} c="white">
-                Portal Settings
-              </Text>
+          {activeTab === 'admin' && isAdmin && (
+            <Stack gap={24}>
+              <div>
+                <Text size="xl" fw={700} c="white">
+                  Portal Settings
+                </Text>
+                <Text size="sm" c="dimmed">
+                  Configure WinterFur Manage portal defaults and quick links
+                </Text>
+              </div>
 
-              <Grid gap="xl">
+              {settingsStatus && (
+                <Paper
+                  p="sm"
+                  radius="sm"
+                  withBorder
+                  style={{
+                    backgroundColor:
+                      settingsStatus.type === 'success'
+                        ? 'rgba(18, 184, 134, 0.1)'
+                        : 'rgba(250, 82, 82, 0.1)',
+                    borderColor:
+                      settingsStatus.type === 'success'
+                        ? 'rgba(18, 184, 134, 0.35)'
+                        : 'rgba(250, 82, 82, 0.35)',
+                  }}
+                >
+                  <Text
+                    size="xs"
+                    fw={600}
+                    c={settingsStatus.type === 'success' ? 'teal.4' : 'red.4'}
+                  >
+                    {settingsStatus.text}
+                  </Text>
+                </Paper>
+              )}
+
+              <Grid gap={24} align="start">
                 <Grid.Col span={{ base: 12, md: 6 }}>
                   <Paper
-                    p="lg"
+                    component="form"
+                    onSubmit={handleSaveGeneralSettings}
+                    p={24}
                     radius="md"
                     withBorder
                     style={{
                       backgroundColor: 'var(--mantine-color-dark-7)',
-                      borderColor: 'var(--mantine-color-dark-5)',
+                      borderColor: 'var(--mantine-color-dark-4)',
                     }}
                   >
                     <Text size="sm" fw={700} c="white" mb="md">
@@ -1120,30 +1264,37 @@ export function PortalShell({
                     <Stack gap="md">
                       <TextInput
                         label="Convention Name"
-                        defaultValue="WinterFur 2026"
+                        required
+                        value={conventionName}
+                        onChange={(e) => setConventionName(e.target.value)}
                       />
                       <TextInput
                         label="Identity Server (WinterFur Identity)"
-                        defaultValue="https://identity.winterfur.org"
+                        value={identityConfig?.issuerUrl ?? 'https://identity.winterfur.org'}
                         disabled
                       />
                       <TextInput
                         label="Realm"
-                        defaultValue="winterfur"
+                        value={identityConfig?.realm ?? 'winterfur'}
                         disabled
                       />
+                      <Group justify="flex-end">
+                        <Button color="cyan" size="xs" type="submit" loading={isSavingSettings}>
+                          Save Configuration
+                        </Button>
+                      </Group>
                     </Stack>
                   </Paper>
                 </Grid.Col>
 
                 <Grid.Col span={{ base: 12, md: 6 }}>
                   <Paper
-                    p="lg"
+                    p={24}
                     radius="md"
                     withBorder
                     style={{
                       backgroundColor: 'var(--mantine-color-dark-7)',
-                      borderColor: 'var(--mantine-color-dark-5)',
+                      borderColor: 'var(--mantine-color-dark-4)',
                     }}
                   >
                     <Group justify="space-between" mb="md">
@@ -1160,14 +1311,16 @@ export function PortalShell({
                     </Group>
 
                     {showAddQl && (
-                      <Box
+                      <Paper
                         component="form"
                         onSubmit={handleAddQuickLink}
                         mb="md"
                         p="sm"
+                        radius="sm"
+                        withBorder
                         style={{
                           backgroundColor: 'var(--mantine-color-dark-6)',
-                          borderRadius: 6,
+                          borderColor: 'var(--mantine-color-dark-4)',
                         }}
                       >
                         <Stack gap="xs">
@@ -1195,28 +1348,33 @@ export function PortalShell({
                             required
                             placeholder="https://..."
                             value={newQl.url}
-                            onChange={(e) =>
-                              setNewQl({ ...newQl, url: e.target.value })
-                            }
+                            error={quickLinkUrlError}
+                            onChange={(e) => {
+                              setNewQl({ ...newQl, url: e.target.value });
+                              if (quickLinkUrlError) setQuickLinkUrlError(null);
+                            }}
                           />
                           <Group justify="flex-end" gap="xs" mt="xs">
                             <Button
                               variant="default"
                               size="xs"
-                              onClick={() => setShowAddQl(false)}
+                              onClick={() => {
+                                setShowAddQl(false);
+                                setQuickLinkUrlError(null);
+                              }}
                             >
                               Cancel
                             </Button>
-                            <Button variant="filled" size="xs" type="submit">
+                            <Button color="cyan" size="xs" type="submit">
                               Save
                             </Button>
                           </Group>
                         </Stack>
-                      </Box>
+                      </Paper>
                     )}
 
                     <Stack gap="xs">
-                      {quickLinks.map((q) => (
+                      {quickLinks.map((q, index) => (
                         <Paper
                           key={q.id}
                           p="xs"
@@ -1226,23 +1384,50 @@ export function PortalShell({
                             borderColor: 'var(--mantine-color-dark-4)',
                           }}
                         >
-                          <Group justify="space-between">
-                            <div>
-                              <Text size="xs" fw={600} c="white">
+                          <Group justify="space-between" wrap="nowrap">
+                            <div style={{ minWidth: 0 }}>
+                              <Text size="xs" fw={600} c="white" truncate>
                                 {q.icon} {q.title}
                               </Text>
-                              <Text size="xs" c="dimmed">
+                              <Text size="xs" c="dimmed" truncate>
                                 {q.url}
                               </Text>
                             </div>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              onClick={() => handleRemoveQuickLink(q.id)}
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
+                            <Group gap={4} wrap="nowrap">
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                aria-label="Move quick link up"
+                                title="Move up"
+                                disabled={index === 0 || isSavingSettings}
+                                onClick={() => handleMoveQuickLink(index, -1)}
+                              >
+                                <IconArrowUp size={14} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                aria-label="Move quick link down"
+                                title="Move down"
+                                disabled={index === quickLinks.length - 1 || isSavingSettings}
+                                onClick={() => handleMoveQuickLink(index, 1)}
+                              >
+                                <IconArrowDown size={14} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                aria-label="Remove quick link"
+                                title="Remove quick link"
+                                loading={isSavingSettings}
+                                onClick={() => handleRemoveQuickLink(q.id)}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </Group>
                           </Group>
                         </Paper>
                       ))}
@@ -1280,7 +1465,7 @@ export function PortalShell({
             <strong style={{ color: '#fff' }}>3. Code of Conduct:</strong> You
             represent WinterFur and adhere to all safety guidelines.
           </Text>
-          <Divider my="sm" />
+          <Divider my="sm" color="var(--mantine-color-dark-4)" />
           <Group justify="space-between">
             <Text size="xs" c="dimmed">
               Signed by <strong style={{ color: '#fff' }}>{profile.nickname}</strong>

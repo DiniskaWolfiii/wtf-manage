@@ -3,7 +3,7 @@ import Keycloak from 'next-auth/providers/keycloak';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'winterfur-portal-session-encryption-secret-32-chars',
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   providers: [
     Keycloak({
       clientId: process.env.KEYCLOAK_CLIENT_ID,
@@ -29,7 +29,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       if (token && session.user) {
-        (session as unknown as { accessToken?: string }).accessToken = token.accessToken as string;
         session.user.id = (token.userId as string) || (token.sub as string);
         (session.user as unknown as { username?: string }).username = token.username as string;
         (session.user as unknown as { roles?: string[] }).roles = (token.roles as string[]) || [];

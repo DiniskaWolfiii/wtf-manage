@@ -27,6 +27,10 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: 'Missing credentialId' }, { status: 400 });
   }
 
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(credentialId)) {
+    return NextResponse.json({ error: 'Invalid credentialId' }, { status: 400 });
+  }
+
   const success = await deleteUserCredential(session.user.id, credentialId);
 
   return NextResponse.json({ success });

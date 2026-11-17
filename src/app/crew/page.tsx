@@ -1,5 +1,7 @@
 import { auth } from '@/auth';
 import { fetchKeycloakUser, fetchUserCredentials } from '@/lib/keycloak';
+import { getServerAccessToken } from '@/lib/server-auth';
+import { getIdentityDisplayConfig, getPortalSettings } from '@/lib/settings';
 import { PortalShell } from '@/components/PortalShell';
 import { redirect } from 'next/navigation';
 
@@ -10,11 +12,13 @@ export default async function CrewPage() {
     redirect('/api/auth/signin?callbackUrl=/crew');
   }
 
-  const accessToken = (session as unknown as { accessToken?: string }).accessToken;
-  const [initialProfile, initialSecurity] = await Promise.all([
+  const accessToken = await getServerAccessToken();
+  const [initialProfile, initialSecurity, initialSettings] = await Promise.all([
     fetchKeycloakUser(session.user.id, accessToken),
     fetchUserCredentials(session.user.id),
+    getPortalSettings(),
   ]);
+  const identityConfig = getIdentityDisplayConfig();
 
   const user = {
     id: session.user.id,
@@ -30,6 +34,8 @@ export default async function CrewPage() {
       sessionUser={user}
       initialProfile={initialProfile || undefined}
       initialSecurity={initialSecurity}
+      initialSettings={initialSettings}
+      identityConfig={identityConfig}
     />
   );
 }

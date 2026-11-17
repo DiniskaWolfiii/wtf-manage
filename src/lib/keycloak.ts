@@ -113,16 +113,24 @@ async function getAdminToken(): Promise<string | null> {
   }
 }
 
+function isSafePathSegment(value: string): boolean {
+  return Boolean(value) && !value.includes('/') && !value.includes('\\') && !value.includes('..') && !value.includes('?') && !value.includes('#');
+}
+
 /**
  * Fetch user profile from Keycloak using Admin API or user access token.
  */
 export async function fetchKeycloakUser(userId: string, userAccessToken?: string): Promise<UserProfileData | null> {
+  if (!isSafePathSegment(userId)) {
+    return null;
+  }
+
   const { baseUrl, realm, issuer } = getKeycloakUrls();
   const adminToken = await getAdminToken();
 
   // Try Admin REST API first if adminToken is available
   if (adminToken) {
-    const userEndpoint = `${baseUrl}/admin/realms/${realm}/users/${userId}`;
+    const userEndpoint = `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}`;
     try {
       const res = await fetch(userEndpoint, {
         headers: {
@@ -171,6 +179,10 @@ export async function updateKeycloakUser(
   updated: Partial<UserProfileData>,
   userAccessToken?: string
 ): Promise<boolean> {
+  if (!isSafePathSegment(userId)) {
+    return false;
+  }
+
   const { baseUrl, realm, issuer } = getKeycloakUrls();
   const adminToken = await getAdminToken();
 
@@ -189,7 +201,7 @@ export async function updateKeycloakUser(
 
   // Try Admin REST API
   if (adminToken) {
-    const userEndpoint = `${baseUrl}/admin/realms/${realm}/users/${userId}`;
+    const userEndpoint = `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}`;
     try {
       // First get existing user attributes so we don't wipe unmanaged attributes
       const existingRes = await fetch(userEndpoint, {
@@ -289,10 +301,10 @@ export async function fetchUserCredentials(userId: string): Promise<SecurityStat
     passkeys: [],
   };
 
-  if (!adminToken) return fallback;
+  if (!adminToken || !isSafePathSegment(userId)) return fallback;
 
   try {
-    const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${userId}/credentials`, {
+    const res = await fetch(`${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/credentials`, {
       headers: { Authorization: `Bearer ${adminToken}` },
       cache: 'no-store',
     });
@@ -346,11 +358,13 @@ export async function deleteUserCredential(userId: string, credentialId: string)
   const { baseUrl, realm } = getKeycloakUrls();
   const adminToken = await getAdminToken();
 
-  if (!adminToken) return false;
+  if (!adminToken || !isSafePathSegment(userId) || !isSafePathSegment(credentialId)) {
+    return false;
+  }
 
   try {
     const res = await fetch(
-      `${baseUrl}/admin/realms/${realm}/users/${userId}/credentials/${credentialId}`,
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/credentials/${encodeURIComponent(credentialId)}`,
       {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${adminToken}` },

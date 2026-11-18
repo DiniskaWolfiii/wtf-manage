@@ -143,6 +143,9 @@ export async function fetchKeycloakUser(userId: string, userAccessToken?: string
         const data: KeycloakUserProfile = await res.json();
         return mapKeycloakToProfile(data);
       }
+      if (res.status === 401) {
+        cachedAdminToken = null;
+      }
     } catch (err) {
       console.error('[Keycloak] Admin API fetch failed:', err);
     }
@@ -209,12 +212,20 @@ export async function updateKeycloakUser(
         headers: { Authorization: `Bearer ${adminToken}` },
         cache: 'no-store',
       });
-      const existingData = existingRes.ok ? await existingRes.json() : {};
+      if (!existingRes.ok) {
+        if (existingRes.status === 401) {
+          cachedAdminToken = null;
+        }
+        console.warn(`[Keycloak] Admin API pre-fetch returned status: ${existingRes.status}`);
+        return false;
+      }
+      const existingData = await existingRes.json();
 
       const body: Record<string, unknown> = {
         firstName: updated.firstName ?? existingData.firstName,
         lastName: updated.lastName ?? existingData.lastName,
         email: updated.email ?? existingData.email,
+        ...(updated.email && updated.email !== existingData.email ? { emailVerified: false } : {}),
         attributes: {
           ...(existingData.attributes || {}),
           ...attributesPayload,
@@ -231,6 +242,9 @@ export async function updateKeycloakUser(
       });
 
       if (putRes.ok) return true;
+      if (putRes.status === 401) {
+        cachedAdminToken = null;
+      }
       console.warn(`[Keycloak] Admin API update returned status: ${putRes.status}`);
     } catch (err) {
       console.error('[Keycloak] Admin API update error:', err);
@@ -376,6 +390,10 @@ export async function deleteUserCredential(userId: string, credentialId: string)
       }
     );
 
+    if (res.status === 401) {
+      cachedAdminToken = null;
+    }
+
     return res.ok || res.status === 204;
   } catch (err) {
     console.error('[Keycloak] Error deleting credential:', err);
@@ -384,12 +402,19 @@ export async function deleteUserCredential(userId: string, credentialId: string)
 }
 
 /**
- * Build a Keycloak Action URL (kc_action=UPDATE_PASSWORD, CONFIGURE_TOTP, webauthn-register)
+ * Build a Keycloak Action URL (kc_action=UPDATE_PASSWORD, CONFIGURE_TOTP, webauthn-register-passwordless)
  */
 export function buildKeycloakActionUrl(action: string, redirectUrl?: string): string {
   const { issuer } = getKeycloakUrls();
-  const clientId = process.env.KEYCLOAK_CLIENT_ID || 'wtf-manage-test';
-  const targetRedirect = redirectUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://marmelada.wolfiii.gay';
+  const clientId = process.env.KEYCLOAK_CLIENT_ID;
+  const targetRedirect = redirectUrl || process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL;
+
+  if (!clientId) {
+    throw new Error('[Keycloak] KEYCLOAK_CLIENT_ID is not configured');
+  }
+  if (!targetRedirect) {
+    throw new Error('[Keycloak] Redirect URL is not configured');
+  }
 
   const authUrl = new URL(`${issuer}/protocol/openid-connect/auth`);
   authUrl.searchParams.set('client_id', clientId);

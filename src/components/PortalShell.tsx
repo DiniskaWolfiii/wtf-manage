@@ -1110,7 +1110,7 @@ export function PortalShell({
                         <Button
                           variant="default"
                           size="sm"
-                          onClick={() => handleTriggerAction('webauthn-register')}
+                          onClick={() => handleTriggerAction('webauthn-register-passwordless')}
                         >
                           + Add
                         </Button>

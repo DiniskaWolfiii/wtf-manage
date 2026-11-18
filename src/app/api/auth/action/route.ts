@@ -28,8 +28,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Invalid action parameter' }, { status: 400 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || new URL(req.url).origin;
-  const targetUrl = buildKeycloakActionUrl(action, `${appUrl}/profile`);
+  const appUrl = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
+  const targetUrl = buildKeycloakActionUrl(action, new URL('/profile', appUrl).toString());
 
   return NextResponse.redirect(targetUrl);
 }

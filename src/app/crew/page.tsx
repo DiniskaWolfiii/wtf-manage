@@ -12,6 +12,11 @@ export default async function CrewPage() {
     redirect('/login?callbackUrl=/crew');
   }
 
+  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
+  if (!roles.includes('crew')) {
+    redirect('/profile');
+  }
+
   const accessToken = await getServerAccessToken();
   const [initialProfile, initialSecurity, initialSettings] = await Promise.all([
     fetchKeycloakUser(session.user.id, accessToken),

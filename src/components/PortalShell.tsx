@@ -94,9 +94,10 @@ export function PortalShell({
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
+  const isCrew = sessionUser?.roles?.includes('crew') ?? false;
   const hasFurryResources = sessionUser?.roles?.includes('furry_ressources') ?? false;
 
-  const activeTab: 'profile' | 'crew' | 'fr' | 'admin' = pathname.startsWith('/crew')
+  const activeTab: 'profile' | 'crew' | 'fr' | 'admin' = pathname.startsWith('/crew') && isCrew
     ? 'crew'
     : pathname.startsWith('/fr') && hasFurryResources
     ? 'fr'
@@ -487,20 +488,22 @@ export function PortalShell({
             />
           </div>
 
-          <div>
-            <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
-              Crew
+          {isCrew && (
+            <div>
+              <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+                Crew
+              </div>
+              <NavLink
+                label="Crew Dashboard"
+                leftSection={<IconPaw size={18} />}
+                active={activeTab === 'crew'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/crew');
+                }}
+              />
             </div>
-            <NavLink
-              label="Crew Dashboard"
-              leftSection={<IconPaw size={18} />}
-              active={activeTab === 'crew'}
-              onClick={() => {
-                closeMobileNav();
-                router.push('/crew');
-              }}
-            />
-          </div>
+          )}
 
           {hasFurryResources && (
             <div>
@@ -1161,7 +1164,7 @@ export function PortalShell({
           )}
 
           {/* TAB 2: CREW DASHBOARD */}
-          {activeTab === 'crew' && (
+          {activeTab === 'crew' && isCrew && (
             <Stack gap={24}>
               <div>
                 <Text size="xl" fw={700} c="white">

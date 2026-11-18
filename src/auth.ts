@@ -28,12 +28,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (profile) {
         token.username = (profile as Record<string, unknown>).preferred_username as string;
         token.roles = ((profile as Record<string, unknown>).realm_access as { roles?: string[] })?.roles || [];
+        const picture = (profile as Record<string, unknown>).picture;
+        if (typeof picture === 'string' && picture.trim()) {
+          token.picture = picture.trim();
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = (token.userId as string) || (token.sub as string);
+        if (typeof token.picture === 'string' && token.picture) {
+          session.user.image = token.picture;
+        }
         (session.user as unknown as { username?: string }).username = token.username as string;
         (session.user as unknown as { roles?: string[] }).roles = (token.roles as string[]) || [];
       }

@@ -9,6 +9,7 @@ export const ALLOWED_AVATAR_MIME_TYPES = new Set([
 ]);
 
 export const MAX_AVATAR_BYTES = 512 * 1024;
+export const MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_LENGTH = 720_000;
 const MAX_URL_LENGTH = 2048;
 
@@ -99,22 +100,7 @@ export function sanitizeProfileUpdate(body: unknown): Partial<UserProfileData> |
     sanitized[key] = trimmed;
   }
 
-  if (input.avatarUrl !== undefined) {
-    if (typeof input.avatarUrl !== 'string') {
-      return null;
-    }
-    const trimmedAvatar = input.avatarUrl.trim();
-    if (trimmedAvatar === '') {
-      sanitized.avatarUrl = '';
-    } else {
-      const safeAvatar = getSafeAvatarUrl(trimmedAvatar);
-      if (!safeAvatar) {
-        return null;
-      }
-      sanitized.avatarUrl = safeAvatar;
-    }
-  }
-
+  // avatarUrl is managed exclusively via /api/profile/avatar and intentionally ignored here.
   return sanitized;
 }
 

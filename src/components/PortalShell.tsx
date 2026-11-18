@@ -50,7 +50,7 @@ import {
 } from '@/lib/portal-config';
 import {
   ALLOWED_AVATAR_MIME_TYPES,
-  MAX_AVATAR_BYTES,
+  MAX_AVATAR_UPLOAD_BYTES,
   getSafeAvatarUrl,
   getSafeExternalUrl,
 } from '@/lib/validation';
@@ -146,6 +146,8 @@ export function PortalShell({
   });
 
   const [editForm, setEditForm] = useState({ ...profile });
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   // Portal Settings & Quick Links State (loaded from MySQL via server props)
   const [conventionName, setConventionName] = useState(
@@ -215,6 +217,64 @@ export function PortalShell({
       setSaveStatus('Error saving profile.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    setAvatarError(null);
+    if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type) || file.size > MAX_AVATAR_UPLOAD_BYTES) {
+      setAvatarError('Please select a PNG, JPEG, WEBP, or GIF image under 5 MB.');
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/profile/avatar', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = (await res.json().catch(() => null)) as { avatarUrl?: string; error?: string } | null;
+      if (!res.ok || !data?.avatarUrl) {
+        setAvatarError(data?.error || 'Failed to upload profile picture.');
+        return;
+      }
+
+      const safeUrl = getSafeAvatarUrl(data.avatarUrl);
+      if (safeUrl) {
+        setEditForm((prev) => ({ ...prev, avatarUrl: safeUrl }));
+        setProfile((prev) => ({ ...prev, avatarUrl: safeUrl }));
+        setSaveStatus('Profile picture updated!');
+      }
+    } catch (err) {
+      console.error('Failed to upload avatar:', err);
+      setAvatarError('Network error while uploading profile picture.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    setAvatarError(null);
+    setIsUploadingAvatar(true);
+    try {
+      const res = await fetch('/api/profile/avatar', { method: 'DELETE' });
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setAvatarError(data?.error || 'Failed to remove profile picture.');
+        return;
+      }
+      setEditForm((prev) => ({ ...prev, avatarUrl: '' }));
+      setProfile((prev) => ({ ...prev, avatarUrl: '' }));
+      setSaveStatus('Profile picture removed.');
+    } catch (err) {
+      console.error('Failed to remove avatar:', err);
+      setAvatarError('Network error while removing profile picture.');
+    } finally {
+      setIsUploadingAvatar(false);
     }
   };
 
@@ -691,31 +751,20 @@ export function PortalShell({
                               variant="default"
                               size="xs"
                               component="label"
+                              loading={isUploadingAvatar}
+                              disabled={isUploadingAvatar}
                             >
                               Upload Image
                               <input
                                 type="file"
                                 hidden
+                                disabled={isUploadingAvatar}
                                 accept="image/png,image/jpeg,image/webp,image/gif"
                                 onChange={(e) => {
                                   const file = e.target.files?.[0];
+                                  e.target.value = '';
                                   if (!file) return;
-                                  if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type) || file.size > MAX_AVATAR_BYTES) {
-                                    setSaveStatus('Please select a PNG, JPEG, WEBP, or GIF image under 512 KB.');
-                                    e.target.value = '';
-                                    return;
-                                  }
-                                  const reader = new FileReader();
-                                  reader.onload = (ev) => {
-                                    const safeUrl = getSafeAvatarUrl(ev.target?.result as string);
-                                    if (safeUrl) {
-                                      setEditForm({
-                                        ...editForm,
-                                        avatarUrl: safeUrl,
-                                      });
-                                    }
-                                  };
-                                  reader.readAsDataURL(file);
+                                  void handleAvatarUpload(file);
                                 }}
                               />
                             </Button>
@@ -724,12 +773,18 @@ export function PortalShell({
                                 variant="subtle"
                                 color="red"
                                 size="xs"
-                                onClick={() => setEditForm({ ...editForm, avatarUrl: '' })}
+                                disabled={isUploadingAvatar}
+                                onClick={() => void handleAvatarRemove()}
                               >
                                 Remove
                               </Button>
                             )}
                           </Group>
+                          {avatarError && (
+                            <Text size="xs" c="red.4" mt={4}>
+                              {avatarError}
+                            </Text>
+                          )}
                         </div>
                       </Group>
 

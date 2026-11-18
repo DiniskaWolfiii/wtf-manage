@@ -78,8 +78,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Test Image Tag in GitOps Repo
-        if: github.ref == 'refs/heads/develop'
+      - name: Update Image Tag in GitOps Repo
+        if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
         env:
           GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
           SHORT_SHA: ${{ github.sha }}
@@ -88,15 +88,25 @@ jobs:
             echo "::error::Secret GITOPS_TOKEN is not set. Add a PAT/Deploy token with write access to diniskawolfiii/wtf-manage-gitops."
             exit 1
           fi
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ENV_NAME="prod"
+          else
+            ENV_NAME="test"
+          fi
+          KUSTOMIZE_FILE="environments/${ENV_NAME}/kustomization.yaml"
           TAG="sha-${SHORT_SHA:0:7}"
           git clone --depth 1 "https://x-access-token:${GITOPS_TOKEN}@github.com/diniskawolfiii/wtf-manage-gitops.git" gitops
           cd gitops
-          sed -i "/ghcr\.io\/diniskawolfiii\/wtf-manage/{n;s|newTag: .*|newTag: ${TAG}|;}" environments/test/kustomization.yaml
+          if [ ! -f "${KUSTOMIZE_FILE}" ]; then
+            echo "::error::Missing ${KUSTOMIZE_FILE} in wtf-manage-gitops."
+            exit 1
+          fi
+          sed -i "/ghcr\.io\/diniskawolfiii\/wtf-manage/{n;s|newTag: .*|newTag: ${TAG}|;}" "${KUSTOMIZE_FILE}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet environments/test/kustomization.yaml; then
-            git commit -am "chore(test): bump wtf-manage to ${TAG}"
+          if ! git diff --quiet "${KUSTOMIZE_FILE}"; then
+            git commit -am "chore(${ENV_NAME}): bump wtf-manage to ${TAG}"
             git push
           else
-            echo "Test image tag already up to date (${TAG})."
+            echo "${ENV_NAME} image tag already up to date (${TAG})."
           fi

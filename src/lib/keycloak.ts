@@ -155,11 +155,12 @@ export async function fetchKeycloakUser(userId: string, userAccessToken?: string
       const res = await fetch(accountEndpoint, {
         headers: {
           Authorization: `Bearer ${userAccessToken}`,
+          Accept: 'application/json',
         },
         cache: 'no-store',
       });
 
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         return mapKeycloakToProfile({ ...data, id: userId });
       }
@@ -244,6 +245,7 @@ export async function updateKeycloakUser(
         method: 'POST',
         headers: {
           Authorization: `Bearer ${userAccessToken}`,
+          Accept: 'application/json',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -310,6 +312,9 @@ export async function fetchUserCredentials(userId: string): Promise<SecurityStat
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        cachedAdminToken = null;
+      }
       console.warn(`[Keycloak] Fetch credentials status: ${res.status}`);
       return fallback;
     }

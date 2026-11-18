@@ -9,7 +9,7 @@ export default async function AdminPage() {
   const session = await auth();
 
   if (!session || !session.user || !session.user.id) {
-    redirect('/api/auth/signin?callbackUrl=/admin');
+    redirect('/login?callbackUrl=/admin');
   }
 
   const roles = (session.user as unknown as { roles?: string[] }).roles || [];

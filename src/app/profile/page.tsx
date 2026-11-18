@@ -9,7 +9,7 @@ export default async function ProfilePage() {
   const session = await auth();
 
   if (!session || !session.user || !session.user.id) {
-    redirect('/api/auth/signin?callbackUrl=/profile');
+    redirect('/login?callbackUrl=/profile');
   }
 
   const accessToken = await getServerAccessToken();

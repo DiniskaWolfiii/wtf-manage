@@ -9,7 +9,7 @@ export default async function CrewPage() {
   const session = await auth();
 
   if (!session || !session.user || !session.user.id) {
-    redirect('/api/auth/signin?callbackUrl=/crew');
+    redirect('/login?callbackUrl=/crew');
   }
 
   const accessToken = await getServerAccessToken();

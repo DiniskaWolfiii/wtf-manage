@@ -39,6 +39,7 @@ import {
   IconShieldCheck,
   IconFileText,
   IconLogout,
+  IconUsersGroup,
 } from '@tabler/icons-react';
 import type { UserProfileData } from '@/lib/keycloak';
 import {
@@ -93,9 +94,12 @@ export function PortalShell({
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
+  const hasFurryResources = sessionUser?.roles?.includes('furry_ressources') ?? false;
 
-  const activeTab: 'profile' | 'crew' | 'admin' = pathname.startsWith('/crew')
+  const activeTab: 'profile' | 'crew' | 'fr' | 'admin' = pathname.startsWith('/crew')
     ? 'crew'
+    : pathname.startsWith('/fr') && hasFurryResources
+    ? 'fr'
     : pathname.startsWith('/admin') && isAdmin
     ? 'admin'
     : 'profile';
@@ -376,7 +380,19 @@ export function PortalShell({
                 color="gray"
                 size="sm"
                 title="Sign out of WinterFur Manage"
-                onClick={() => {
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/auth/logout', { method: 'POST' });
+                    if (res.ok) {
+                      const data = (await res.json()) as { logoutUrl?: string };
+                      if (data.logoutUrl) {
+                        window.location.href = data.logoutUrl;
+                        return;
+                      }
+                    }
+                  } catch {
+                    // Fallback to local signout
+                  }
                   window.location.href = '/api/auth/signout';
                 }}
               >
@@ -425,6 +441,23 @@ export function PortalShell({
               }}
             />
           </div>
+
+          {hasFurryResources && (
+            <div>
+              <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+                Furry Ressources
+              </div>
+              <NavLink
+                label="FR Dashboard"
+                leftSection={<IconUsersGroup size={18} />}
+                active={activeTab === 'fr'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/fr');
+                }}
+              />
+            </div>
+          )}
 
           {isAdmin && (
             <div>
@@ -1208,7 +1241,53 @@ export function PortalShell({
             </Stack>
           )}
 
-          {/* TAB 3: ADMIN PORTAL SETTINGS */}
+          {/* TAB 3: FURRY RESSOURCES (FR) */}
+          {activeTab === 'fr' && hasFurryResources && (
+            <Stack gap={24}>
+              <div>
+                <Text size="xl" fw={700} c="white">
+                  Furry Ressources (FR)
+                </Text>
+                <Text size="sm" c="dimmed">
+                  Internal workspace for the Furry Ressources team
+                </Text>
+              </div>
+
+              <Paper
+                p={24}
+                radius="md"
+                withBorder
+                style={{
+                  backgroundColor: 'var(--mantine-color-dark-7)',
+                  borderColor: 'var(--mantine-color-dark-4)',
+                }}
+              >
+                <Stack gap="md">
+                  <Group justify="space-between" align="center">
+                    <Group gap="xs">
+                      <IconUsersGroup size={18} color="var(--mantine-color-cyan-4)" />
+                      <Text size="md" fw={700} c="white">
+                        FR Workspace Placeholder
+                      </Text>
+                    </Group>
+                    <Badge color="cyan" variant="light">
+                      Coming Soon
+                    </Badge>
+                  </Group>
+                  <Text size="sm" c="dimmed">
+                    This page is reserved for Furry Ressources tools, crew role audits, and
+                    resource management. Only accounts with the{' '}
+                    <Text span fw={600} c="white">
+                      furry_ressources
+                    </Text>{' '}
+                    role can access this area.
+                  </Text>
+                </Stack>
+              </Paper>
+            </Stack>
+          )}
+
+          {/* TAB 4: ADMIN PORTAL SETTINGS */}
           {activeTab === 'admin' && isAdmin && (
             <Stack gap={24}>
               <div>

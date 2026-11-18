@@ -52,13 +52,3 @@ docker build -t ghcr.io/diniskawolfiii/wtf-manage:latest .
 ```
 
 ---
-
-## Deployment & GitOps
-
-This repository contains the **open-source application code**.
-
-All actual environment configurations, domains, and secrets are maintained in the private GitOps repository:
-👉 `github.com/diniskawolfiii/wtf-manage-gitops`
-
-* Manifest templates and Kustomize overlays are available in [`deploy/`](./deploy/).
-* Read the [Deployment & GitOps Guide](./deploy/README.md) for details on setting up ArgoCD, Sealed Secrets, and staging environments.

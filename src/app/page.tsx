@@ -1,5 +1,5 @@
-import { PortalShell } from '@/components/PortalShell';
+import { redirect } from 'next/navigation';
 
 export default function Home() {
-  return <PortalShell />;
+  redirect('/profile');
 }

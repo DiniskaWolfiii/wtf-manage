@@ -77,3 +77,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Update Test Image Tag in GitOps Repo
+        if: github.ref == 'refs/heads/develop'
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          SHORT_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$GITOPS_TOKEN" ]; then
+            echo "::error::Secret GITOPS_TOKEN is not set. Add a PAT/Deploy token with write access to diniskawolfiii/wtf-manage-gitops."
+            exit 1
+          fi
+          TAG="sha-${SHORT_SHA:0:7}"
+          git clone --depth 1 "https://x-access-token:${GITOPS_TOKEN}@github.com/diniskawolfiii/wtf-manage-gitops.git" gitops
+          cd gitops
+          sed -i "/ghcr\.io\/diniskawolfiii\/wtf-manage/{n;s|newTag: .*|newTag: ${TAG}|;}" environments/test/kustomization.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet environments/test/kustomization.yaml; then
+            git commit -am "chore(test): bump wtf-manage to ${TAG}"
+            git push
+          else
+            echo "Test image tag already up to date (${TAG})."
+          fi

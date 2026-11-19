@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   Divider,
+  Grid,
   Group,
   Loader,
   Modal,
@@ -30,10 +31,12 @@ import {
   IconRefresh,
   IconSearch,
   IconTrash,
+  IconUser,
   IconUserMinus,
   IconUserPlus,
   IconUsersGroup,
 } from '@tabler/icons-react';
+import type { UserProfileData } from '@/lib/keycloak';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
 interface DepartmentItem {
@@ -101,6 +104,13 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
     Array<{ userId: string; username: string; avatarUrl?: string; position: string }>
   >([]);
   const [savingOrder, setSavingOrder] = useState(false);
+
+  // View Crew Member Profile modal state
+  const [viewingUser, setViewingUser] = useState<FrUserItem | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [viewedProfile, setViewedProfile] = useState<UserProfileData | null>(null);
+  const [viewedRoles, setViewedRoles] = useState<CrewRoleItem[]>([]);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // User promotion / demotion / role edit state
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
@@ -566,6 +576,32 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
     }
   };
 
+  const openProfileViewer = async (user: FrUserItem) => {
+    setViewingUser(user);
+    setViewedProfile(null);
+    setViewedRoles(user.roles);
+    setProfileError(null);
+    setLoadingProfile(true);
+    try {
+      const res = await fetch(`/api/fr/crew/${encodeURIComponent(user.id)}`, {
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileError(data.error || 'Failed to load crew member profile.');
+        return;
+      }
+      setViewedProfile(data.profile ?? null);
+      if (Array.isArray(data.roles)) {
+        setViewedRoles(data.roles);
+      }
+    } catch {
+      setProfileError('Network error while loading crew member profile.');
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
   return (
     <Stack gap={24}>
       <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
@@ -851,7 +887,16 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                               </div>
                             </Group>
 
-                            <Group gap="xs" wrap="nowrap">
+                            <Group gap="xs" wrap="wrap">
+                              <Button
+                                size="xs"
+                                variant="default"
+                                leftSection={<IconUser size={14} />}
+                                disabled={isBusy}
+                                onClick={() => void openProfileViewer(u)}
+                              >
+                                View Profile
+                              </Button>
                               <Button
                                 size="xs"
                                 variant="default"
@@ -1333,6 +1378,238 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
             </Button>
           </Group>
         </Stack>
+      </Modal>
+
+      {/* Modal: View Crew Member Profile */}
+      <Modal
+        opened={Boolean(viewingUser)}
+        onClose={() => setViewingUser(null)}
+        title={`Crew Profile: ${viewingUser?.username ?? ''}`}
+        size="lg"
+        centered
+        styles={DARK_MODAL_STYLES}
+      >
+        {loadingProfile ? (
+          <Group justify="center" gap="sm" py="xl">
+            <Loader size="sm" color="cyan" />
+            <Text size="sm" c="dimmed">
+              Loading profile...
+            </Text>
+          </Group>
+        ) : profileError ? (
+          <Stack gap="md">
+            <Paper
+              p="sm"
+              radius="sm"
+              withBorder
+              style={{
+                backgroundColor: 'rgba(250, 82, 82, 0.1)',
+                borderColor: 'rgba(250, 82, 82, 0.35)',
+              }}
+            >
+              <Text size="xs" fw={600} c="red.4">
+                {profileError}
+              </Text>
+            </Paper>
+            <Group justify="flex-end">
+              <Button variant="default" size="xs" onClick={() => setViewingUser(null)}>
+                Close
+              </Button>
+            </Group>
+          </Stack>
+        ) : viewedProfile ? (
+          <Stack gap="md">
+            {/* Header Summary */}
+            <Paper
+              p="md"
+              radius="sm"
+              withBorder
+              style={{
+                backgroundColor: 'var(--mantine-color-dark-6)',
+                borderColor: 'var(--mantine-color-dark-4)',
+              }}
+            >
+              <Group gap="md" align="center" wrap="wrap">
+                <Avatar
+                  src={getSafeAvatarUrl(viewedProfile.avatarUrl) ?? undefined}
+                  radius="xl"
+                  size="lg"
+                  color="cyan"
+                >
+                  {viewedProfile.username.slice(0, 2).toUpperCase()}
+                </Avatar>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <Group gap="xs" wrap="wrap">
+                    <Text size="md" fw={700} c="white">
+                      {viewedProfile.nickname || viewedProfile.username}
+                    </Text>
+                    <Badge size="xs" variant="light" color="teal">
+                      Crew
+                    </Badge>
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    @{viewedProfile.username}
+                  </Text>
+                  <Group gap={6} mt={8}>
+                    {viewedRoles.length > 0 ? (
+                      viewedRoles.map((r) => (
+                        <Pill key={r.departmentId} size="sm">
+                          {r.position
+                            ? `${r.departmentName} · ${r.position}`
+                            : r.departmentName}
+                        </Pill>
+                      ))
+                    ) : (
+                      <Text size="xs" c="dimmed">
+                        No departments assigned yet
+                      </Text>
+                    )}
+                  </Group>
+                </div>
+              </Group>
+            </Paper>
+
+            <Grid gap="md">
+              {/* Personal & Furry Info */}
+              <Grid.Col span={{ base: 12, sm: 6 }}>
+                <Paper
+                  p="md"
+                  radius="sm"
+                  withBorder
+                  style={{
+                    backgroundColor: 'var(--mantine-color-dark-6)',
+                    borderColor: 'var(--mantine-color-dark-4)',
+                    height: '100%',
+                  }}
+                >
+                  <Stack gap="xs">
+                    <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                      Personal & Identity
+                    </Text>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Full Name
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {[viewedProfile.firstName, viewedProfile.lastName]
+                          .filter(Boolean)
+                          .join(' ') || '—'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Species / Pronouns
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {[viewedProfile.species, viewedProfile.pronouns]
+                          .filter(Boolean)
+                          .join(' · ') || '—'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Telegram
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {viewedProfile.telegram || '—'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Date of Birth
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {viewedProfile.dob || '—'}
+                      </Text>
+                    </div>
+                  </Stack>
+                </Paper>
+              </Grid.Col>
+
+              {/* Contact & Address */}
+              <Grid.Col span={{ base: 12, sm: 6 }}>
+                <Paper
+                  p="md"
+                  radius="sm"
+                  withBorder
+                  style={{
+                    backgroundColor: 'var(--mantine-color-dark-6)',
+                    borderColor: 'var(--mantine-color-dark-4)',
+                    height: '100%',
+                  }}
+                >
+                  <Stack gap="xs">
+                    <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                      Contact & Address
+                    </Text>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Email
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {viewedProfile.email || '—'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Phone
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {viewedProfile.phone || '—'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">
+                        Address
+                      </Text>
+                      <Text size="sm" fw={600} c="white">
+                        {[
+                          viewedProfile.street,
+                          [viewedProfile.zip, viewedProfile.city].filter(Boolean).join(' '),
+                          viewedProfile.country,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || '—'}
+                      </Text>
+                    </div>
+                  </Stack>
+                </Paper>
+              </Grid.Col>
+            </Grid>
+
+            {/* Future Crew Compliance / Metadata section */}
+            <Paper
+              p="md"
+              radius="sm"
+              withBorder
+              style={{
+                backgroundColor: 'var(--mantine-color-dark-6)',
+                borderColor: 'var(--mantine-color-dark-4)',
+              }}
+            >
+              <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                <div>
+                  <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                    Crew Status & Compliance
+                  </Text>
+                  <Text size="xs" c="dimmed" mt={4}>
+                    NDA status, active-since date, and FR-managed skills will appear here in a
+                    future update.
+                  </Text>
+                </div>
+                <Badge size="sm" variant="light" color="teal">
+                  Active Crew (wtf-crew)
+                </Badge>
+              </Group>
+            </Paper>
+
+            <Group justify="flex-end">
+              <Button variant="default" size="xs" onClick={() => setViewingUser(null)}>
+                Close
+              </Button>
+            </Group>
+          </Stack>
+        ) : null}
       </Modal>
     </Stack>
   );

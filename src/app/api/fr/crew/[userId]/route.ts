@@ -8,12 +8,13 @@ import {
 } from '@/lib/crew';
 import {
   addUserToGroup,
+  fetchKeycloakUser,
   getGroupMemberIds,
   getKeycloakGroupByName,
   removeUserFromGroup,
 } from '@/lib/keycloak';
 import { requireSessionRole } from '@/lib/server-auth';
-import { sanitizeCrewAssignmentsPayload } from '@/lib/validation';
+import { getSafeAvatarUrl, sanitizeCrewAssignmentsPayload } from '@/lib/validation';
 
 const CREW_GROUP_NAME = 'wtf-crew';
 
@@ -23,6 +24,62 @@ function isValidUserId(userId: string): boolean {
     userId.length <= 64 &&
     /^[a-zA-Z0-9_-]+$/.test(userId)
   );
+}
+
+/**
+ * Fetch full profile details + crew roles for an active Crew member.
+ */
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ userId: string }> }
+) {
+  const authResult = await requireSessionRole('furry_ressources');
+  if (authResult instanceof NextResponse) {
+    return authResult;
+  }
+
+  const { userId } = await context.params;
+  if (!isValidUserId(userId)) {
+    return NextResponse.json({ error: 'Invalid user ID' }, { status: 400 });
+  }
+
+  try {
+    const crewGroup = await getKeycloakGroupByName(CREW_GROUP_NAME);
+    if (!crewGroup) {
+      return NextResponse.json(
+        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
+        { status: 500 }
+      );
+    }
+
+    const crewMembers = await getGroupMemberIds(crewGroup.id);
+    if (!crewMembers || !crewMembers.has(userId)) {
+      return NextResponse.json(
+        { error: 'Profile view is only available for active Crew members' },
+        { status: 403 }
+      );
+    }
+
+    const [profile, roles] = await Promise.all([
+      fetchKeycloakUser(userId),
+      getCrewRolesForUser(userId),
+    ]);
+
+    if (!profile) {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      profile: {
+        ...profile,
+        avatarUrl: getSafeAvatarUrl(profile.avatarUrl) ?? undefined,
+      },
+      roles,
+    });
+  } catch (err) {
+    console.error('[API] GET /api/fr/crew/[userId] failed:', (err as Error).message);
+    return NextResponse.json({ error: 'Failed to load crew profile' }, { status: 500 });
+  }
 }
 
 /**

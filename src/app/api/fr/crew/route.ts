@@ -37,7 +37,7 @@ export async function GET() {
 
     const assignmentsByUser = new Map<
       string,
-      Array<{ departmentId: number; departmentName: string; position: string }>
+      Array<{ departmentId: number; departmentName: string; position: string; sortOrder: number }>
     >();
     for (const a of assignments) {
       const list = assignmentsByUser.get(a.userId) ?? [];
@@ -45,6 +45,7 @@ export async function GET() {
         departmentId: a.departmentId,
         departmentName: a.departmentName,
         position: a.position,
+        sortOrder: a.sortOrder,
       });
       assignmentsByUser.set(a.userId, list);
     }

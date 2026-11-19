@@ -20,6 +20,9 @@ import {
 } from '@mantine/core';
 import {
   IconAlertCircle,
+  IconArrowDown,
+  IconArrowsSort,
+  IconArrowUp,
   IconBuilding,
   IconEdit,
   IconInfoCircle,
@@ -45,6 +48,7 @@ interface CrewRoleItem {
   departmentId: number;
   departmentName: string;
   position: string;
+  sortOrder: number;
 }
 
 interface FrUserItem {
@@ -90,6 +94,13 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
   const [savingDeptEdit, setSavingDeptEdit] = useState(false);
   const [deleteDeptTarget, setDeleteDeptTarget] = useState<DepartmentItem | null>(null);
   const [deletingDept, setDeletingDept] = useState(false);
+
+  // Department member ranking modal state
+  const [rankDeptTarget, setRankDeptTarget] = useState<DepartmentItem | null>(null);
+  const [rankedMembers, setRankedMembers] = useState<
+    Array<{ userId: string; username: string; avatarUrl?: string; position: string }>
+  >([]);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   // User promotion / demotion / role edit state
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
@@ -433,13 +444,6 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
         return;
       }
       const pos = row.position.trim();
-      if (!pos) {
-        setStatusMessage({
-          type: 'error',
-          text: 'Please enter a position for each department.',
-        });
-        return;
-      }
       usedDeptIds.add(deptId);
       cleanAssignments.push({ departmentId: deptId, position: pos });
     }
@@ -474,6 +478,91 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
       });
     } finally {
       setSavingRoles(false);
+    }
+  };
+
+  const openRankEditor = (dept: DepartmentItem) => {
+    const members: Array<{
+      userId: string;
+      username: string;
+      avatarUrl?: string;
+      position: string;
+      sortOrder: number;
+    }> = [];
+
+    for (const u of users) {
+      if (!u.isCrew) continue;
+      const role = u.roles.find((r) => r.departmentId === dept.id);
+      if (role) {
+        members.push({
+          userId: u.id,
+          username: u.username,
+          avatarUrl: u.avatarUrl,
+          position: role.position,
+          sortOrder: role.sortOrder ?? 0,
+        });
+      }
+    }
+
+    members.sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return a.username.localeCompare(b.username);
+    });
+
+    setRankDeptTarget(dept);
+    setRankedMembers(
+      members.map(({ userId, username, avatarUrl, position }) => ({
+        userId,
+        username,
+        avatarUrl,
+        position,
+      }))
+    );
+  };
+
+  const moveRankedMember = (index: number, delta: -1 | 1) => {
+    setRankedMembers((prev) => {
+      const targetIndex = index + delta;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  };
+
+  const handleSaveOrder = async () => {
+    if (!rankDeptTarget) return;
+    setSavingOrder(true);
+    setStatusMessage(null);
+    try {
+      const res = await fetch(`/api/fr/departments/${rankDeptTarget.id}/order`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: rankedMembers.map((m) => m.userId) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatusMessage({
+          type: 'error',
+          text: data.error || 'Failed to save member ranking.',
+        });
+        return;
+      }
+      const deptName = rankDeptTarget.name;
+      setRankDeptTarget(null);
+      setStatusMessage({
+        type: 'success',
+        text: `Member ranking updated for "${deptName}".`,
+      });
+      await loadData();
+    } catch {
+      setStatusMessage({
+        type: 'error',
+        text: 'Network error while saving member ranking.',
+      });
+    } finally {
+      setSavingOrder(false);
     }
   };
 
@@ -748,7 +837,9 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                                   {u.roles.length > 0 ? (
                                     u.roles.map((r) => (
                                       <Pill key={r.departmentId} size="sm">
-                                        {r.departmentName} · {r.position}
+                                        {r.position
+                                          ? `${r.departmentName} · ${r.position}`
+                                          : r.departmentName}
                                       </Pill>
                                     ))
                                   ) : (
@@ -895,9 +986,20 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                         <Group gap={4} wrap="nowrap">
                           <ActionIcon
                             variant="subtle"
+                            color="cyan"
+                            size="sm"
+                            title="Rank members"
+                            aria-label="Rank members"
+                            onClick={() => openRankEditor(dept)}
+                          >
+                            <IconArrowsSort size={14} />
+                          </ActionIcon>
+                          <ActionIcon
+                            variant="subtle"
                             color="gray"
                             size="sm"
                             title="Edit"
+                            aria-label="Edit department"
                             onClick={() => {
                               setEditDeptTarget(dept);
                               setEditDeptName(dept.name);
@@ -1065,8 +1167,8 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                         style={{ flex: 1 }}
                       />
                       <TextInput
-                        label={index === 0 ? 'Position (Free Text)' : undefined}
-                        placeholder="e.g. Lead, Dispatcher, Helper"
+                        label={index === 0 ? 'Position (Optional)' : undefined}
+                        placeholder="Optional (e.g. Lead, Dispatcher)"
                         maxLength={120}
                         value={row.position}
                         onChange={(e) =>
@@ -1128,6 +1230,109 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
             </Group>
           </Stack>
         </form>
+      </Modal>
+
+      {/* Modal: Rank Members in Department */}
+      <Modal
+        opened={Boolean(rankDeptTarget)}
+        onClose={() => setRankDeptTarget(null)}
+        title={`Rank Members: ${rankDeptTarget?.name ?? ''}`}
+        centered
+        styles={DARK_MODAL_STYLES}
+      >
+        <Stack gap="md">
+          <Text size="xs" c="dimmed">
+            Order members from top to bottom as they should appear in the Org Chart (independent
+            of position title).
+          </Text>
+
+          {rankedMembers.length === 0 ? (
+            <Text size="sm" c="dimmed" py="sm" ta="center">
+              No members assigned to this department yet.
+            </Text>
+          ) : (
+            <Stack gap="xs">
+              {rankedMembers.map((member, index) => {
+                const safeAvatar = getSafeAvatarUrl(member.avatarUrl);
+                return (
+                  <Paper
+                    key={member.userId}
+                    p="sm"
+                    radius="sm"
+                    withBorder
+                    style={{
+                      backgroundColor: 'var(--mantine-color-dark-6)',
+                      borderColor: 'var(--mantine-color-dark-4)',
+                    }}
+                  >
+                    <Group justify="space-between" wrap="nowrap" gap="sm">
+                      <Group gap="sm" style={{ minWidth: 0, flex: 1 }}>
+                        <Badge size="xs" variant="light" color="cyan">
+                          #{index + 1}
+                        </Badge>
+                        <Avatar
+                          src={safeAvatar ?? undefined}
+                          radius="xl"
+                          size="sm"
+                          color="cyan"
+                        >
+                          {member.username.slice(0, 2).toUpperCase()}
+                        </Avatar>
+                        <div style={{ minWidth: 0 }}>
+                          <Text size="sm" fw={600} c="white" truncate>
+                            {member.username}
+                          </Text>
+                          {member.position && (
+                            <Text size="xs" c="dimmed" truncate>
+                              {member.position}
+                            </Text>
+                          )}
+                        </div>
+                      </Group>
+                      <Group gap={4} wrap="nowrap">
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="sm"
+                          aria-label="Move up"
+                          disabled={index === 0 || savingOrder}
+                          onClick={() => moveRankedMember(index, -1)}
+                        >
+                          <IconArrowUp size={14} />
+                        </ActionIcon>
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="sm"
+                          aria-label="Move down"
+                          disabled={index === rankedMembers.length - 1 || savingOrder}
+                          onClick={() => moveRankedMember(index, 1)}
+                        >
+                          <IconArrowDown size={14} />
+                        </ActionIcon>
+                      </Group>
+                    </Group>
+                  </Paper>
+                );
+              })}
+            </Stack>
+          )}
+
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" size="xs" onClick={() => setRankDeptTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              color="cyan"
+              size="xs"
+              loading={savingOrder}
+              disabled={rankedMembers.length < 2}
+              onClick={handleSaveOrder}
+            >
+              Save Order
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Stack>
   );

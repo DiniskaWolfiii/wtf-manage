@@ -13,6 +13,7 @@ export interface UserCrewRole {
   departmentId: number;
   departmentName: string;
   position: string;
+  sortOrder: number;
 }
 
 export interface CrewAssignment extends UserCrewRole {
@@ -34,6 +35,7 @@ interface CrewAssignmentRow extends RowDataPacket {
   department_id: number;
   department_name: string;
   position: string;
+  sort_order: number;
 }
 
 interface GroupIdRow extends RowDataPacket {
@@ -45,15 +47,15 @@ interface UserIdRow extends RowDataPacket {
 }
 
 const globalForCrew = globalThis as unknown as {
-  crewTablesV2Ready?: Promise<void>;
+  crewTablesV3Ready?: Promise<void>;
 };
 
 /**
  * Ensures the `departments` and `crew_assignments` tables exist in the `wtf_manage` database.
  */
 export async function ensureCrewTables(): Promise<void> {
-  if (!globalForCrew.crewTablesV2Ready) {
-    globalForCrew.crewTablesV2Ready = (async () => {
+  if (!globalForCrew.crewTablesV3Ready) {
+    globalForCrew.crewTablesV3Ready = (async () => {
       try {
         await ensureDatabaseExists();
       } catch (err) {
@@ -96,7 +98,8 @@ export async function ensureCrewTables(): Promise<void> {
           id INT AUTO_INCREMENT PRIMARY KEY,
           user_id VARCHAR(64) NOT NULL,
           department_id INT NOT NULL,
-          position VARCHAR(120) NOT NULL,
+          position VARCHAR(120) NOT NULL DEFAULT '',
+          sort_order INT NOT NULL DEFAULT 0,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY uq_user_department (user_id, department_id),
@@ -106,12 +109,24 @@ export async function ensureCrewTables(): Promise<void> {
             ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
+
+      // Idempotent migration for sort_order on existing crew_assignments tables
+      const [sortOrderRows] = await pool.query<RowDataPacket[]>(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'crew_assignments' AND COLUMN_NAME = 'sort_order'`
+      );
+      if (sortOrderRows.length === 0) {
+        await pool.query(`
+          ALTER TABLE crew_assignments
+          ADD COLUMN sort_order INT NOT NULL DEFAULT 0 AFTER position
+        `);
+      }
     })().catch((err) => {
-      globalForCrew.crewTablesV2Ready = undefined;
+      globalForCrew.crewTablesV3Ready = undefined;
       throw err;
     });
   }
-  return globalForCrew.crewTablesV2Ready;
+  return globalForCrew.crewTablesV3Ready;
 }
 
 function mapDepartmentRow(row: DepartmentRow): Department {
@@ -247,7 +262,7 @@ export async function getCrewRolesForUser(userId: string): Promise<UserCrewRole[
   await ensureCrewTables();
   const pool = getPool();
   const [rows] = await pool.execute<CrewAssignmentRow[]>(
-    `SELECT ca.department_id, d.name AS department_name, ca.position
+    `SELECT ca.department_id, d.name AS department_name, ca.position, ca.sort_order
      FROM crew_assignments ca
      INNER JOIN departments d ON d.id = ca.department_id
      WHERE ca.user_id = ?
@@ -258,6 +273,7 @@ export async function getCrewRolesForUser(userId: string): Promise<UserCrewRole[
     departmentId: row.department_id,
     departmentName: row.department_name,
     position: row.position,
+    sortOrder: row.sort_order ?? 0,
   }));
 }
 
@@ -265,10 +281,10 @@ export async function listAllCrewAssignments(): Promise<CrewAssignment[]> {
   await ensureCrewTables();
   const pool = getPool();
   const [rows] = await pool.query<CrewAssignmentRow[]>(
-    `SELECT ca.id, ca.user_id, ca.department_id, d.name AS department_name, ca.position
+    `SELECT ca.id, ca.user_id, ca.department_id, d.name AS department_name, ca.position, ca.sort_order
      FROM crew_assignments ca
      INNER JOIN departments d ON d.id = ca.department_id
-     ORDER BY d.name ASC`
+     ORDER BY d.name ASC, ca.sort_order ASC, ca.id ASC`
   );
   return rows.map((row) => ({
     id: row.id,
@@ -276,6 +292,7 @@ export async function listAllCrewAssignments(): Promise<CrewAssignment[]> {
     departmentId: row.department_id,
     departmentName: row.department_name,
     position: row.position,
+    sortOrder: row.sort_order ?? 0,
   }));
 }
 
@@ -311,15 +328,62 @@ export async function replaceUserCrewAssignments(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    // Preserve existing sort_order per department when editing a user's roles
+    const [existingRows] = await conn.execute<RowDataPacket[]>(
+      'SELECT department_id, sort_order FROM crew_assignments WHERE user_id = ?',
+      [userId]
+    );
+    const existingOrder = new Map<number, number>();
+    for (const r of existingRows) {
+      existingOrder.set(Number(r.department_id), Number(r.sort_order ?? 0));
+    }
+
     await conn.execute('DELETE FROM crew_assignments WHERE user_id = ?', [userId]);
 
     for (const item of assignments) {
+      let sortOrder = existingOrder.get(item.departmentId);
+      if (sortOrder === undefined) {
+        const [maxRows] = await conn.execute<RowDataPacket[]>(
+          'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM crew_assignments WHERE department_id = ?',
+          [item.departmentId]
+        );
+        sortOrder = Number(maxRows[0]?.next_order ?? 0);
+      }
+
       await conn.execute(
-        'INSERT INTO crew_assignments (user_id, department_id, position) VALUES (?, ?, ?)',
-        [userId, item.departmentId, item.position]
+        'INSERT INTO crew_assignments (user_id, department_id, position, sort_order) VALUES (?, ?, ?, ?)',
+        [userId, item.departmentId, item.position, sortOrder]
       );
     }
 
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Update the display/rank order of members within a specific department.
+ */
+export async function updateDepartmentMemberOrder(
+  departmentId: number,
+  orderedUserIds: string[]
+): Promise<void> {
+  await ensureCrewTables();
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    for (let i = 0; i < orderedUserIds.length; i++) {
+      await conn.execute(
+        'UPDATE crew_assignments SET sort_order = ? WHERE department_id = ? AND user_id = ?',
+        [i, departmentId, orderedUserIds[i]]
+      );
+    }
     await conn.commit();
   } catch (err) {
     await conn.rollback();

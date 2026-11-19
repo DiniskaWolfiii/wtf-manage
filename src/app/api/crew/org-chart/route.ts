@@ -5,8 +5,6 @@ import { requireSessionRole } from '@/lib/server-auth';
 import { getPortalSettings } from '@/lib/settings';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
-const LEAD_POSITION_REGEX = /\b(lead|head|director|chief|coordinator)\b/i;
-
 export async function GET() {
   const authResult = await requireSessionRole('crew');
   if (authResult instanceof NextResponse) {
@@ -38,7 +36,7 @@ export async function GET() {
         username: string;
         avatarUrl?: string;
         position: string;
-        isLead: boolean;
+        sortOrder: number;
       }>
     >();
 
@@ -53,14 +51,14 @@ export async function GET() {
         username: userInfo?.username ?? 'Unknown User',
         avatarUrl: userInfo?.avatarUrl,
         position: a.position,
-        isLead: LEAD_POSITION_REGEX.test(a.position),
+        sortOrder: a.sortOrder,
       });
       membersByDept.set(a.departmentId, list);
     }
 
     const orgDepartments = departments.map((dept) => {
       const members = (membersByDept.get(dept.id) ?? []).sort((a, b) => {
-        if (a.isLead !== b.isLead) return a.isLead ? -1 : 1;
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
         return a.username.localeCompare(b.username);
       });
       return {

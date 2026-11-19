@@ -1294,7 +1294,9 @@ export function PortalShell({
                           <Group gap="xs">
                             {initialCrewRoles.map((role) => (
                               <Pill key={role.departmentId} size="md">
-                                {role.departmentName} · {role.position}
+                                {role.position
+                                  ? `${role.departmentName} · ${role.position}`
+                                  : role.departmentName}
                               </Pill>
                             ))}
                           </Group>

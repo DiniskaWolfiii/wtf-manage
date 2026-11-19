@@ -197,14 +197,18 @@ export function sanitizeDepartmentName(raw: unknown): string | null {
 }
 
 /**
- * Validate and trim a free-text crew position title (1-120 characters).
+ * Validate and trim an optional free-text crew position title (0-120 characters).
+ * Returns null only if the input type is invalid or exceeds 120 characters.
  */
 export function sanitizePositionTitle(raw: unknown): string | null {
+  if (raw === undefined || raw === null) {
+    return '';
+  }
   if (typeof raw !== 'string') {
     return null;
   }
   const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > MAX_POSITION_LENGTH) {
+  if (trimmed.length > MAX_POSITION_LENGTH) {
     return null;
   }
   return trimmed;
@@ -244,7 +248,7 @@ export function sanitizeCrewAssignmentsPayload(
       return null;
     }
     const position = sanitizePositionTitle(raw.position);
-    if (!position) {
+    if (position === null) {
       return null;
     }
     seenDepartments.add(raw.departmentId);

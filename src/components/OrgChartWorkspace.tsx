@@ -32,7 +32,7 @@ interface OrgChartMember {
   username: string;
   avatarUrl?: string;
   position: string;
-  isLead: boolean;
+  sortOrder: number;
 }
 
 interface OrgChartDepartment {
@@ -185,35 +185,28 @@ function OrgDepartmentBranch({
                     withBorder
                     style={{
                       backgroundColor: 'var(--mantine-color-dark-6)',
-                      borderColor: member.isLead
-                        ? 'rgba(21, 170, 191, 0.45)'
-                        : 'var(--mantine-color-dark-4)',
+                      borderColor: 'var(--mantine-color-dark-4)',
                     }}
                   >
-                    <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
-                      <Group gap="sm" style={{ minWidth: 0, flex: 1 }}>
-                        <Avatar
-                          src={safeAvatar ?? undefined}
-                          radius="xl"
-                          size="sm"
-                          color="cyan"
-                        >
-                          {member.username.slice(0, 2).toUpperCase()}
-                        </Avatar>
-                        <div style={{ minWidth: 0 }}>
-                          <Text size="sm" fw={600} c="white" truncate>
-                            {member.username}
-                          </Text>
+                    <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                      <Avatar
+                        src={safeAvatar ?? undefined}
+                        radius="xl"
+                        size="sm"
+                        color="cyan"
+                      >
+                        {member.username.slice(0, 2).toUpperCase()}
+                      </Avatar>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <Text size="sm" fw={600} c="white" truncate>
+                          {member.username}
+                        </Text>
+                        {member.position && (
                           <Text size="xs" c="dimmed" truncate>
                             {member.position}
                           </Text>
-                        </div>
-                      </Group>
-                      {member.isLead && (
-                        <Badge size="xs" variant="light" color="cyan">
-                          Lead
-                        </Badge>
-                      )}
+                        )}
+                      </div>
                     </Group>
                   </Paper>
                 );

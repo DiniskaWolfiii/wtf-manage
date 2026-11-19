@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { recordAuditLog } from '@/lib/audit';
 import { fetchUserCredentials, deleteUserCredential } from '@/lib/keycloak';
 
 export async function GET() {
@@ -32,6 +33,24 @@ export async function DELETE(req: Request) {
   }
 
   const success = await deleteUserCredential(session.user.id, credentialId);
+
+  if (success) {
+    const actorUsername =
+      (session.user as unknown as { username?: string }).username ||
+      session.user.name ||
+      session.user.id;
+    await recordAuditLog({
+      category: 'profile',
+      action: 'profile.passkey_deleted',
+      actorUserId: session.user.id,
+      actorUsername,
+      targetType: 'credential',
+      targetId: credentialId,
+      targetLabel: actorUsername,
+      summary: `Removed security credential (${credentialId}) for "${actorUsername}"`,
+      metadata: { credentialId },
+    });
+  }
 
   return NextResponse.json({ success });
 }

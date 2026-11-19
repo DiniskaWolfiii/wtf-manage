@@ -40,8 +40,15 @@ import {
   IconFileText,
   IconLogout,
   IconUsersGroup,
+  IconSitemap,
+  IconHistory,
 } from '@tabler/icons-react';
+import type { UserCrewRole } from '@/lib/crew';
 import type { UserProfileData } from '@/lib/keycloak';
+import { FrWorkspace } from '@/components/FrWorkspace';
+import { AdminDepartmentMapping } from '@/components/AdminDepartmentMapping';
+import { OrgChartWorkspace } from '@/components/OrgChartWorkspace';
+import { AuditLogsWorkspace } from '@/components/AuditLogsWorkspace';
 import {
   DEFAULT_PORTAL_SETTINGS,
   type IdentityDisplayConfig,
@@ -84,26 +91,36 @@ export function PortalShell({
   initialSecurity,
   initialSettings,
   identityConfig,
+  initialCrewRoles,
 }: {
   sessionUser?: SessionUser;
   initialProfile?: UserProfileData;
   initialSecurity?: SecurityData;
   initialSettings?: PortalSettings;
   identityConfig?: IdentityDisplayConfig;
+  initialCrewRoles?: UserCrewRole[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
   const isCrew = sessionUser?.roles?.includes('crew') ?? false;
-  const hasFurryResources = sessionUser?.roles?.includes('furry_ressources') ?? false;
+  const isFrAdmin = sessionUser?.roles?.includes('furry_ressources_admin') ?? false;
+  const hasFurryResources =
+    (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
+  const canViewLogs = isAdmin || hasFurryResources;
 
-  const activeTab: 'profile' | 'crew' | 'fr' | 'admin' = pathname.startsWith('/crew') && isCrew
-    ? 'crew'
-    : pathname.startsWith('/fr') && hasFurryResources
-    ? 'fr'
-    : pathname.startsWith('/admin') && isAdmin
-    ? 'admin'
-    : 'profile';
+  const activeTab: 'profile' | 'crew' | 'org-chart' | 'fr' | 'admin' | 'logs' =
+    pathname.startsWith('/crew/org-chart') && isCrew
+      ? 'org-chart'
+      : pathname.startsWith('/crew') && isCrew
+      ? 'crew'
+      : pathname.startsWith('/fr') && hasFurryResources
+      ? 'fr'
+      : pathname.startsWith('/logs') && canViewLogs
+      ? 'logs'
+      : pathname.startsWith('/admin') && isAdmin
+      ? 'admin'
+      : 'profile';
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
@@ -388,14 +405,15 @@ export function PortalShell({
           borderBottom: '1px solid var(--mantine-color-dark-4)',
         }}
       >
-        <Group h="100%" px="lg" justify="space-between">
-          <Group gap="sm">
+        <Group h="100%" px={{ base: 'sm', sm: 'lg' }} justify="space-between" wrap="nowrap" gap="xs">
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Burger
               opened={mobileNavOpened}
               onClick={toggleMobileNav}
               hiddenFrom="sm"
               size="sm"
               aria-label="Toggle navigation"
+              style={{ flexShrink: 0 }}
             />
             <Box
               style={{
@@ -409,57 +427,64 @@ export function PortalShell({
                 justifyContent: 'center',
                 fontWeight: 700,
                 fontSize: 13,
+                flexShrink: 0,
               }}
             >
               WTF
             </Box>
-            <Text fw={700} c="white" size="md" style={{ letterSpacing: '-0.3px' }}>
+            <Text
+              fw={700}
+              c="white"
+              size="md"
+              truncate
+              style={{ letterSpacing: '-0.3px', minWidth: 0 }}
+            >
               WinterFur Manage
             </Text>
           </Group>
 
-          <Group gap="md">
-            <Group gap="xs">
-              <Avatar
-                src={getSafeAvatarUrl(profile.avatarUrl)}
-                radius="xl"
-                size={32}
-                style={{
-                  backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: 12,
-                }}
-              >
-                {initials}
-              </Avatar>
-              <Text size="sm" fw={600} c="white">
-                {profile.nickname}
-              </Text>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                title="Sign out of WinterFur Manage"
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/auth/logout', { method: 'POST' });
-                    if (res.ok) {
-                      const data = (await res.json()) as { logoutUrl?: string };
-                      if (data.logoutUrl) {
-                        window.location.href = data.logoutUrl;
-                        return;
-                      }
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Avatar
+              src={getSafeAvatarUrl(profile.avatarUrl)}
+              radius="xl"
+              size={32}
+              style={{
+                backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: 12,
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </Avatar>
+            <Text size="sm" fw={600} c="white" visibleFrom="sm">
+              {profile.nickname}
+            </Text>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              aria-label="Sign out of WinterFur Manage"
+              title="Sign out of WinterFur Manage"
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/auth/logout', { method: 'POST' });
+                  if (res.ok) {
+                    const data = (await res.json()) as { logoutUrl?: string };
+                    if (data.logoutUrl) {
+                      window.location.href = data.logoutUrl;
+                      return;
                     }
-                  } catch {
-                    // Fallback to local signout
                   }
-                  window.location.href = '/api/auth/signout';
-                }}
-              >
-                <IconLogout size={16} />
-              </ActionIcon>
-            </Group>
+                } catch {
+                  // Fallback to local signout
+                }
+                window.location.href = '/api/auth/signout';
+              }}
+            >
+              <IconLogout size={16} />
+            </ActionIcon>
           </Group>
         </Group>
       </AppShell.Header>
@@ -502,13 +527,22 @@ export function PortalShell({
                   router.push('/crew');
                 }}
               />
+              <NavLink
+                label="Org Chart"
+                leftSection={<IconSitemap size={18} />}
+                active={activeTab === 'org-chart'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/crew/org-chart');
+                }}
+              />
             </div>
           )}
 
           {hasFurryResources && (
             <div>
               <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
-                Furry Ressources
+                Furry Resources
               </div>
               <NavLink
                 label="FR Dashboard"
@@ -519,6 +553,17 @@ export function PortalShell({
                   router.push('/fr');
                 }}
               />
+              {!isAdmin && (
+                <NavLink
+                  label="Audit Logs"
+                  leftSection={<IconHistory size={18} />}
+                  active={activeTab === 'logs'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/logs');
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -536,6 +581,15 @@ export function PortalShell({
                   router.push('/admin');
                 }}
               />
+              <NavLink
+                label="Audit Logs"
+                leftSection={<IconHistory size={18} />}
+                active={activeTab === 'logs'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/logs');
+                }}
+              />
             </div>
           )}
         </Stack>
@@ -547,7 +601,13 @@ export function PortalShell({
           backgroundColor: 'var(--mantine-color-dark-8)',
         }}
       >
-        <Box style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
+        <Box
+          style={{
+            maxWidth: activeTab === 'org-chart' ? '100%' : 1200,
+            margin: '0 auto',
+            padding: activeTab === 'org-chart' ? '24px' : '32px 24px',
+          }}
+        >
           {/* TAB 1: MY PROFILE */}
           {activeTab === 'profile' && (
             <Grid gap={24} align="start">
@@ -1265,11 +1325,21 @@ export function PortalShell({
                         <div className="uppercase-label" style={{ marginBottom: 8 }}>
                           My Crew Roles
                         </div>
-                        <Group gap="xs">
-                          <Pill size="md">IT - Lead</Pill>
-                          <Pill size="md">Venue Relation - Catering</Pill>
-                          <Pill size="md">Con-Ops - Dispatcher</Pill>
-                        </Group>
+                        {initialCrewRoles && initialCrewRoles.length > 0 ? (
+                          <Group gap="xs">
+                            {initialCrewRoles.map((role) => (
+                              <Pill key={role.departmentId} size="md">
+                                {role.position
+                                  ? `${role.departmentName} · ${role.position}`
+                                  : role.departmentName}
+                              </Pill>
+                            ))}
+                          </Group>
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            No departments assigned yet.
+                          </Text>
+                        )}
                       </div>
 
                       <Divider color="var(--mantine-color-dark-4)" />
@@ -1299,50 +1369,12 @@ export function PortalShell({
             </Stack>
           )}
 
+          {/* TAB 2B: CREW ORG CHART */}
+          {activeTab === 'org-chart' && isCrew && <OrgChartWorkspace />}
+
           {/* TAB 3: FURRY RESSOURCES (FR) */}
           {activeTab === 'fr' && hasFurryResources && (
-            <Stack gap={24}>
-              <div>
-                <Text size="xl" fw={700} c="white">
-                  Furry Ressources (FR)
-                </Text>
-                <Text size="sm" c="dimmed">
-                  Internal workspace for the Furry Ressources team
-                </Text>
-              </div>
-
-              <Paper
-                p={24}
-                radius="md"
-                withBorder
-                style={{
-                  backgroundColor: 'var(--mantine-color-dark-7)',
-                  borderColor: 'var(--mantine-color-dark-4)',
-                }}
-              >
-                <Stack gap="md">
-                  <Group justify="space-between" align="center">
-                    <Group gap="xs">
-                      <IconUsersGroup size={18} color="var(--mantine-color-cyan-4)" />
-                      <Text size="md" fw={700} c="white">
-                        FR Workspace Placeholder
-                      </Text>
-                    </Group>
-                    <Badge color="cyan" variant="light">
-                      Coming Soon
-                    </Badge>
-                  </Group>
-                  <Text size="sm" c="dimmed">
-                    This page is reserved for Furry Ressources tools, crew role audits, and
-                    resource management. Only accounts with the{' '}
-                    <Text span fw={600} c="white">
-                      furry_ressources
-                    </Text>{' '}
-                    role can access this area.
-                  </Text>
-                </Stack>
-              </Paper>
-            </Stack>
+            <FrWorkspace currentUserId={sessionUser?.id} isFrAdmin={isFrAdmin} />
           )}
 
           {/* TAB 4: ADMIN PORTAL SETTINGS */}
@@ -1573,7 +1605,13 @@ export function PortalShell({
                   </Paper>
                 </Grid.Col>
               </Grid>
+
+              <AdminDepartmentMapping />
             </Stack>
+          )}
+          {/* TAB 5: AUDIT LOGS */}
+          {activeTab === 'logs' && canViewLogs && (
+            <AuditLogsWorkspace isAdmin={isAdmin} />
           )}
         </Box>
       </AppShell.Main>

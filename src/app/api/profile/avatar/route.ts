@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { auth } from '@/auth';
+import { recordAuditLog } from '@/lib/audit';
 import { fetchKeycloakUser, updateKeycloakUser } from '@/lib/keycloak';
 import { getServerAccessToken } from '@/lib/server-auth';
 import { deleteAvatarByUrl, isStorageConfigured, uploadAvatarBuffer } from '@/lib/storage';
@@ -107,6 +108,23 @@ export async function POST(req: Request) {
     });
   }
 
+  const actorUsername =
+    currentProfile?.username ||
+    (session.user as unknown as { username?: string }).username ||
+    session.user.name ||
+    userId;
+  await recordAuditLog({
+    category: 'profile',
+    action: 'profile.avatar_updated',
+    actorUserId: userId,
+    actorUsername,
+    targetType: 'user',
+    targetId: userId,
+    targetLabel: actorUsername,
+    summary: `Updated profile avatar for "${actorUsername}"`,
+    metadata: { operation: 'upload' },
+  });
+
   return NextResponse.json({ avatarUrl: newAvatarUrl });
 }
 
@@ -133,6 +151,23 @@ export async function DELETE() {
       console.error('Failed to delete avatar from R2:', err);
     });
   }
+
+  const actorUsername =
+    currentProfile?.username ||
+    (session.user as unknown as { username?: string }).username ||
+    session.user.name ||
+    userId;
+  await recordAuditLog({
+    category: 'profile',
+    action: 'profile.avatar_updated',
+    actorUserId: userId,
+    actorUsername,
+    targetType: 'user',
+    targetId: userId,
+    targetLabel: actorUsername,
+    summary: `Removed profile avatar for "${actorUsername}"`,
+    metadata: { operation: 'delete' },
+  });
 
   return NextResponse.json({ success: true, avatarUrl: '' });
 }

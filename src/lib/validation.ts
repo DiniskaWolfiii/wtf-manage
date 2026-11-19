@@ -177,3 +177,83 @@ export function sanitizePortalSettingsUpdate(body: unknown): Partial<PortalSetti
 
   return sanitized;
 }
+
+const MAX_DEPARTMENT_NAME_LENGTH = 80;
+const MAX_POSITION_LENGTH = 120;
+const MAX_ASSIGNMENTS_PER_USER = 30;
+
+/**
+ * Validate and trim a department name (1-80 characters).
+ */
+export function sanitizeDepartmentName(raw: unknown): string | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > MAX_DEPARTMENT_NAME_LENGTH) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Validate and trim an optional free-text crew position title (0-120 characters).
+ * Returns null only if the input type is invalid or exceeds 120 characters.
+ */
+export function sanitizePositionTitle(raw: unknown): string | null {
+  if (raw === undefined || raw === null) {
+    return '';
+  }
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > MAX_POSITION_LENGTH) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Validate a crew assignment payload (`{ assignments: [{ departmentId, position }] }`).
+ * Deduplicates by departmentId (rejects duplicate department IDs).
+ */
+export function sanitizeCrewAssignmentsPayload(
+  body: unknown
+): Array<{ departmentId: number; position: string }> | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return null;
+  }
+  const input = body as Record<string, unknown>;
+  if (!Array.isArray(input.assignments) || input.assignments.length > MAX_ASSIGNMENTS_PER_USER) {
+    return null;
+  }
+
+  const seenDepartments = new Set<number>();
+  const clean: Array<{ departmentId: number; position: string }> = [];
+
+  for (const item of input.assignments) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return null;
+    }
+    const raw = item as Record<string, unknown>;
+    if (
+      typeof raw.departmentId !== 'number' ||
+      !Number.isInteger(raw.departmentId) ||
+      raw.departmentId <= 0
+    ) {
+      return null;
+    }
+    if (seenDepartments.has(raw.departmentId)) {
+      return null;
+    }
+    const position = sanitizePositionTitle(raw.position);
+    if (position === null) {
+      return null;
+    }
+    seenDepartments.add(raw.departmentId);
+    clean.push({ departmentId: raw.departmentId, position });
+  }
+
+  return clean;
+}

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { recordAuditLog } from '@/lib/audit';
 import {
   deleteAllUserCrewAssignments,
   getCrewRolesForUser,
@@ -117,6 +118,20 @@ export async function POST(
       );
     }
 
+    const targetProfile = await fetchKeycloakUser(userId);
+    const targetLabel = targetProfile?.username || userId;
+    await recordAuditLog({
+      category: 'fr',
+      action: 'crew.promote',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'user',
+      targetId: userId,
+      targetLabel,
+      summary: `Promoted "${targetLabel}" to Crew (wtf-crew)`,
+      metadata: { groupName: CREW_GROUP_NAME },
+    });
+
     return NextResponse.json({ ok: true, isCrew: true });
   } catch (err) {
     console.error('[API] POST /api/fr/crew/[userId] failed:', (err as Error).message);
@@ -210,7 +225,29 @@ export async function PUT(
     }
 
     await replaceUserCrewAssignments(userId, assignments);
-    const updatedRoles = await getCrewRolesForUser(userId);
+    const [updatedRoles, targetProfile] = await Promise.all([
+      getCrewRolesForUser(userId),
+      fetchKeycloakUser(userId),
+    ]);
+    const targetLabel = targetProfile?.username || userId;
+
+    await recordAuditLog({
+      category: 'fr',
+      action: 'crew.roles_updated',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'user',
+      targetId: userId,
+      targetLabel,
+      summary: `Updated crew roles for "${targetLabel}" (${updatedRoles.length} department(s))`,
+      metadata: {
+        roles: updatedRoles.map((r) => ({
+          departmentId: r.departmentId,
+          departmentName: r.departmentName,
+          position: r.position,
+        })),
+      },
+    });
 
     return NextResponse.json({ ok: true, roles: updatedRoles });
   } catch (err) {
@@ -263,7 +300,22 @@ export async function DELETE(
       }
     }
 
+    const targetProfile = await fetchKeycloakUser(userId);
+    const targetLabel = targetProfile?.username || userId;
+
     await deleteAllUserCrewAssignments(userId);
+
+    await recordAuditLog({
+      category: 'fr',
+      action: 'crew.demote',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'user',
+      targetId: userId,
+      targetLabel,
+      summary: `Demoted "${targetLabel}" from Crew (removed wtf-crew & all assignments)`,
+      metadata: { removedMappedGroupCount: mappedGroupIds.length },
+    });
 
     return NextResponse.json({ ok: true, isCrew: false, roles: [] });
   } catch (err) {

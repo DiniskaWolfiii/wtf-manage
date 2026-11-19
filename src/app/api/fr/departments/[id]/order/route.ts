@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { recordAuditLog } from '@/lib/audit';
 import { getDepartmentById, updateDepartmentMemberOrder } from '@/lib/crew';
 import { requireSessionRole } from '@/lib/server-auth';
 
@@ -50,6 +51,19 @@ export async function PUT(
     }
 
     await updateDepartmentMemberOrder(id, userIds);
+
+    await recordAuditLog({
+      category: 'fr',
+      action: 'department.order_updated',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'department',
+      targetId: String(dept.id),
+      targetLabel: dept.name,
+      summary: `Updated member ranking in "${dept.name}" (${userIds.length} member(s))`,
+      metadata: { orderedUserIds: userIds },
+    });
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[API] PUT /api/fr/departments/[id]/order failed:', (err as Error).message);

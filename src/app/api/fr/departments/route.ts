@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { recordAuditLog } from '@/lib/audit';
 import { createDepartment, getDepartmentById, listDepartments } from '@/lib/crew';
 import { requireSessionRole } from '@/lib/server-auth';
 import { sanitizeDepartmentName } from '@/lib/validation';
@@ -60,6 +61,19 @@ export async function POST(request: Request) {
     }
 
     const created = await createDepartment(name, parentDepartmentId);
+
+    await recordAuditLog({
+      category: 'fr',
+      action: 'department.created',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'department',
+      targetId: String(created.id),
+      targetLabel: created.name,
+      summary: `Created department "${created.name}"`,
+      metadata: { parentDepartmentId: created.parentDepartmentId },
+    });
+
     return NextResponse.json({ department: created }, { status: 201 });
   } catch (err) {
     const mysqlErr = err as { code?: string; message?: string };

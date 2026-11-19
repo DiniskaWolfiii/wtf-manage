@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { recordAuditLog } from '@/lib/audit';
 import {
   deleteDepartment,
   getDepartmentById,
@@ -90,6 +91,18 @@ export async function PATCH(
       return NextResponse.json({ error: 'Department not found' }, { status: 404 });
     }
 
+    await recordAuditLog({
+      category: 'fr',
+      action: 'department.updated',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'department',
+      targetId: String(updated.id),
+      targetLabel: updated.name,
+      summary: `Updated department "${updated.name}"`,
+      metadata: updates,
+    });
+
     return NextResponse.json({ department: updated });
   } catch (err) {
     const mysqlErr = err as { code?: string; message?: string };
@@ -139,6 +152,19 @@ export async function DELETE(
     }
 
     await deleteDepartment(id);
+
+    await recordAuditLog({
+      category: 'fr',
+      action: 'department.deleted',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'department',
+      targetId: String(dept.id),
+      targetLabel: dept.name,
+      summary: `Deleted department "${dept.name}"`,
+      metadata: { keycloakGroupName: dept.keycloakGroupName },
+    });
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[API] DELETE /api/fr/departments/[id] failed:', (err as Error).message);

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { recordAuditLog } from '@/lib/audit';
 import { fetchKeycloakUser, updateKeycloakUser, UserProfileData } from '@/lib/keycloak';
 import { getServerAccessToken } from '@/lib/server-auth';
 import { sanitizeProfileUpdate } from '@/lib/validation';
@@ -60,8 +61,40 @@ export async function PUT(req: Request) {
 
     const userId = session.user.id;
     const accessToken = await getServerAccessToken();
+    const previousProfile = await fetchKeycloakUser(userId, accessToken);
 
     const success = await updateKeycloakUser(userId, sanitizedBody, accessToken);
+
+    if (success) {
+      const changes: Record<string, { from: string; to: string }> = {};
+      for (const [key, nextVal] of Object.entries(sanitizedBody)) {
+        if (typeof nextVal !== 'string') continue;
+        const prevVal = previousProfile
+          ? String((previousProfile as unknown as Record<string, unknown>)[key] ?? '')
+          : '';
+        if (prevVal !== nextVal) {
+          changes[key] = { from: prevVal, to: nextVal };
+        }
+      }
+
+      const actorUsername =
+        previousProfile?.username ||
+        (session.user as unknown as { username?: string }).username ||
+        session.user.name ||
+        userId;
+
+      await recordAuditLog({
+        category: 'profile',
+        action: 'profile.updated',
+        actorUserId: userId,
+        actorUsername,
+        targetType: 'user',
+        targetId: userId,
+        targetLabel: actorUsername,
+        summary: `Updated profile fields (${Object.keys(changes).join(', ') || 'no changes'})`,
+        metadata: { changes },
+      });
+    }
 
     return NextResponse.json({
       success,

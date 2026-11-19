@@ -41,12 +41,14 @@ import {
   IconLogout,
   IconUsersGroup,
   IconSitemap,
+  IconHistory,
 } from '@tabler/icons-react';
 import type { UserCrewRole } from '@/lib/crew';
 import type { UserProfileData } from '@/lib/keycloak';
 import { FrWorkspace } from '@/components/FrWorkspace';
 import { AdminDepartmentMapping } from '@/components/AdminDepartmentMapping';
 import { OrgChartWorkspace } from '@/components/OrgChartWorkspace';
+import { AuditLogsWorkspace } from '@/components/AuditLogsWorkspace';
 import {
   DEFAULT_PORTAL_SETTINGS,
   type IdentityDisplayConfig,
@@ -105,14 +107,17 @@ export function PortalShell({
   const isFrAdmin = sessionUser?.roles?.includes('furry_ressources_admin') ?? false;
   const hasFurryResources =
     (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
+  const canViewLogs = isAdmin || hasFurryResources;
 
-  const activeTab: 'profile' | 'crew' | 'org-chart' | 'fr' | 'admin' =
+  const activeTab: 'profile' | 'crew' | 'org-chart' | 'fr' | 'admin' | 'logs' =
     pathname.startsWith('/crew/org-chart') && isCrew
       ? 'org-chart'
       : pathname.startsWith('/crew') && isCrew
       ? 'crew'
       : pathname.startsWith('/fr') && hasFurryResources
       ? 'fr'
+      : pathname.startsWith('/logs') && canViewLogs
+      ? 'logs'
       : pathname.startsWith('/admin') && isAdmin
       ? 'admin'
       : 'profile';
@@ -537,7 +542,7 @@ export function PortalShell({
           {hasFurryResources && (
             <div>
               <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
-                Furry Ressources
+                Furry Resources
               </div>
               <NavLink
                 label="FR Dashboard"
@@ -548,6 +553,17 @@ export function PortalShell({
                   router.push('/fr');
                 }}
               />
+              {!isAdmin && (
+                <NavLink
+                  label="Audit Logs"
+                  leftSection={<IconHistory size={18} />}
+                  active={activeTab === 'logs'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/logs');
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -563,6 +579,15 @@ export function PortalShell({
                 onClick={() => {
                   closeMobileNav();
                   router.push('/admin');
+                }}
+              />
+              <NavLink
+                label="Audit Logs"
+                leftSection={<IconHistory size={18} />}
+                active={activeTab === 'logs'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/logs');
                 }}
               />
             </div>
@@ -1583,6 +1608,10 @@ export function PortalShell({
 
               <AdminDepartmentMapping />
             </Stack>
+          )}
+          {/* TAB 5: AUDIT LOGS */}
+          {activeTab === 'logs' && canViewLogs && (
+            <AuditLogsWorkspace isAdmin={isAdmin} />
           )}
         </Box>
       </AppShell.Main>

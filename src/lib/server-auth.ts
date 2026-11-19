@@ -75,11 +75,11 @@ export async function getServerIdToken(): Promise<string | undefined> {
 
 /**
  * Verify that the current request has an authenticated session with at least one
- * of the required roles. Returns `{ userId, roles }` or a `401`/`403` NextResponse.
+ * of the required roles. Returns `{ userId, username, roles }` or a `401`/`403` NextResponse.
  */
 export async function requireSessionRole(
   requiredRole: string | string[]
-): Promise<{ userId: string; roles: string[] } | NextResponse> {
+): Promise<{ userId: string; username: string; roles: string[] } | NextResponse> {
   const session = await auth();
   if (!session || !session.user || !session.user.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -91,5 +91,10 @@ export async function requireSessionRole(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  return { userId: session.user.id, roles };
+  const username =
+    (session.user as unknown as { username?: string }).username ||
+    session.user.name ||
+    session.user.id;
+
+  return { userId: session.user.id, username, roles };
 }

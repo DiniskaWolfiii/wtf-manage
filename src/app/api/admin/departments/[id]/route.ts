@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { recordAuditLog } from '@/lib/audit';
 import {
   getDepartmentById,
   getDepartmentMemberIds,
@@ -43,6 +44,17 @@ export async function PUT(
 
     if (rawGroupId === null || rawGroupId === '') {
       const updated = await updateDepartmentKeycloakMapping(id, null, null);
+      await recordAuditLog({
+        category: 'admin',
+        action: 'department.keycloak_mapped',
+        actorUserId: authResult.userId,
+        actorUsername: authResult.username,
+        targetType: 'department',
+        targetId: String(dept.id),
+        targetLabel: dept.name,
+        summary: `Removed Keycloak group mapping for "${dept.name}"`,
+        metadata: { keycloakGroupId: null, keycloakGroupName: null },
+      });
       return NextResponse.json({ department: updated, syncedCount: 0 });
     }
 
@@ -82,6 +94,23 @@ export async function PUT(
         }
       }
     }
+
+    await recordAuditLog({
+      category: 'admin',
+      action: 'department.keycloak_mapped',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'department',
+      targetId: String(dept.id),
+      targetLabel: dept.name,
+      summary: `Mapped department "${dept.name}" to Keycloak group "${matchedGroup.name}"`,
+      metadata: {
+        keycloakGroupId: matchedGroup.id,
+        keycloakGroupName: matchedGroup.name,
+        syncMembers,
+        syncedCount,
+      },
+    });
 
     return NextResponse.json({ department: updated, syncedCount });
   } catch (err) {

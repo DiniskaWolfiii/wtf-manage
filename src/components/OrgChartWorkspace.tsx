@@ -218,45 +218,85 @@ function OrgDepartmentBranch({
 
       {/* Render child departments recursively underneath */}
       {node.children.length > 0 && (
-        <Box
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-          }}
-        >
-          <Box
-            style={{
-              width: 2,
-              height: 20,
-              backgroundColor: 'var(--mantine-color-dark-4)',
-            }}
-          />
-          {node.children.length > 1 && (
-            <Box
-              style={{
-                width: 'calc(100% - 300px)',
-                minWidth: 120,
-                height: 2,
-                backgroundColor: 'var(--mantine-color-dark-4)',
-              }}
-            />
-          )}
-          <Box
-            style={{
-              display: 'flex',
-              flexWrap: 'nowrap',
-              justifyContent: 'center',
-              alignItems: 'flex-start',
-              gap: 24,
-            }}
-          >
-            {node.children.map((child) => (
-              <OrgDepartmentBranch key={child.id} node={child} depth={depth + 1} />
-            ))}
-          </Box>
-        </Box>
+        <OrgChildrenRow nodes={node.children} depth={depth + 1} />
       )}
+    </Box>
+  );
+}
+
+function OrgChildrenRow({
+  nodes,
+  depth,
+}: {
+  nodes: OrgTreeNode[];
+  depth: number;
+}) {
+  return (
+    <Box
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+      }}
+    >
+      <Box
+        style={{
+          width: 2,
+          height: 20,
+          backgroundColor: 'var(--mantine-color-dark-4)',
+        }}
+      />
+      <Box
+        style={{
+          display: 'flex',
+          flexWrap: 'nowrap',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+        }}
+      >
+        {nodes.map((child, idx) => {
+          const isFirst = idx === 0;
+          const isLast = idx === nodes.length - 1;
+          return (
+            <Box
+              key={child.id}
+              style={{
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                padding: '0 12px',
+              }}
+            >
+              {nodes.length > 1 && !isFirst && (
+                <Box
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '50%',
+                    height: 2,
+                    backgroundColor: 'var(--mantine-color-dark-4)',
+                  }}
+                />
+              )}
+              {nodes.length > 1 && !isLast && (
+                <Box
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: '50%',
+                    width: '50%',
+                    height: 2,
+                    backgroundColor: 'var(--mantine-color-dark-4)',
+                  }}
+                />
+              )}
+              <OrgDepartmentBranch node={child} depth={depth} />
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 }
@@ -689,44 +729,7 @@ export function OrgChartWorkspace() {
                 </Text>
               </Paper>
             ) : (
-              <Box
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                }}
-              >
-                <Box
-                  style={{
-                    width: 2,
-                    height: 20,
-                    backgroundColor: 'var(--mantine-color-dark-4)',
-                  }}
-                />
-                {filteredTree.length > 1 && (
-                  <Box
-                    style={{
-                      width: 'calc(100% - 300px)',
-                      minWidth: 120,
-                      height: 2,
-                      backgroundColor: 'var(--mantine-color-dark-4)',
-                    }}
-                  />
-                )}
-                <Box
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'nowrap',
-                    justifyContent: 'center',
-                    alignItems: 'flex-start',
-                    gap: 24,
-                  }}
-                >
-                  {filteredTree.map((rootNode) => (
-                    <OrgDepartmentBranch key={rootNode.id} node={rootNode} depth={0} />
-                  ))}
-                </Box>
-              </Box>
+              <OrgChildrenRow nodes={filteredTree} depth={0} />
             )}
           </Box>
         </Paper>

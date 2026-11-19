@@ -19,7 +19,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole('furry_ressources_admin');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -108,7 +108,7 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole('furry_ressources_admin');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

@@ -17,6 +17,7 @@ import { requireSessionRole } from '@/lib/server-auth';
 import { getSafeAvatarUrl, sanitizeCrewAssignmentsPayload } from '@/lib/validation';
 
 const CREW_GROUP_NAME = 'wtf-crew';
+const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
 
 function isValidUserId(userId: string): boolean {
   return (
@@ -33,7 +34,7 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole(FR_ANY_ROLES);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -89,7 +90,7 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole('furry_ressources_admin');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -131,7 +132,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole(FR_ANY_ROLES);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -226,7 +227,7 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole('furry_ressources_admin');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

@@ -9,12 +9,15 @@ import { requireSessionRole } from '@/lib/server-auth';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
 const CREW_GROUP_NAME = 'wtf-crew';
+const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
 
 export async function GET() {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole(FR_ANY_ROLES);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
+
+  const isFrAdmin = authResult.roles.includes('furry_ressources_admin');
 
   try {
     const [kcUsers, crewGroup, departments, assignments] = await Promise.all([
@@ -50,7 +53,7 @@ export async function GET() {
       assignmentsByUser.set(a.userId, list);
     }
 
-    const users = kcUsers.map((u) => ({
+    const allUsers = kcUsers.map((u) => ({
       id: u.id,
       username: u.username,
       avatarUrl: getSafeAvatarUrl(u.avatarUrl) ?? undefined,
@@ -58,8 +61,12 @@ export async function GET() {
       roles: assignmentsByUser.get(u.id) ?? [],
     }));
 
+    // Standard FR only receives active crew members; FR Admin also sees non-crew users for promotion
+    const users = isFrAdmin ? allUsers : allUsers.filter((u) => u.isCrew);
+
     return NextResponse.json({
       crewGroupConfigured: Boolean(crewGroup),
+      isFrAdmin,
       users,
       departments,
     });

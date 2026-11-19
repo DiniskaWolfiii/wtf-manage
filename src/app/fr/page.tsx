@@ -13,7 +13,7 @@ export default async function FrPage() {
   }
 
   const roles = (session.user as unknown as { roles?: string[] }).roles || [];
-  if (!roles.includes('furry_ressources')) {
+  if (!roles.includes('furry_ressources') && !roles.includes('furry_ressources_admin')) {
     redirect('/profile');
   }
 

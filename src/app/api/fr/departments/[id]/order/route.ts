@@ -11,7 +11,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole(['furry_ressources', 'furry_ressources_admin']);
   if (authResult instanceof NextResponse) {
     return authResult;
   }

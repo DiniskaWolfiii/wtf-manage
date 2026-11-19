@@ -73,7 +73,13 @@ const DARK_MODAL_STYLES = {
   header: { backgroundColor: 'var(--mantine-color-dark-7)', color: '#fff' },
 };
 
-export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
+export function FrWorkspace({
+  currentUserId,
+  isFrAdmin = false,
+}: {
+  currentUserId?: string;
+  isFrAdmin?: boolean;
+}) {
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<string>('crew');
   const [crewGroupConfigured, setCrewGroupConfigured] = useState(true);
@@ -610,7 +616,9 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
             Furry Resources (FR)
           </Text>
           <Text size="sm" c="dimmed">
-            Promote crew members, manage departments, and assign positions
+            {isFrAdmin
+              ? 'Promote crew members, manage departments, and assign positions'
+              : 'View crew profiles, assign existing departments, and rank department members'}
           </Text>
         </div>
         <Button
@@ -734,57 +742,59 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
         {/* SUB-TAB 1: CREW MANAGEMENT */}
         <Tabs.Panel value="crew">
           <Stack gap={24}>
-            {/* Promote User via Searchable Dropdown */}
-            <Paper
-              p={24}
-              radius="md"
-              withBorder
-              style={{
-                backgroundColor: 'var(--mantine-color-dark-7)',
-                borderColor: 'var(--mantine-color-dark-4)',
-              }}
-            >
-              <Stack gap="md">
-                <div>
-                  <Text size="md" fw={700} c="white">
-                    Promote User to Crew
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    Search by username in the dropdown to add a user to the{' '}
-                    <code>wtf-crew</code> group
-                  </Text>
-                </div>
+            {/* Promote User via Searchable Dropdown (FR Admin only) */}
+            {isFrAdmin && (
+              <Paper
+                p={24}
+                radius="md"
+                withBorder
+                style={{
+                  backgroundColor: 'var(--mantine-color-dark-7)',
+                  borderColor: 'var(--mantine-color-dark-4)',
+                }}
+              >
+                <Stack gap="md">
+                  <div>
+                    <Text size="md" fw={700} c="white">
+                      Promote User to Crew
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Search by username in the dropdown to add a user to the{' '}
+                      <code>wtf-crew</code> group
+                    </Text>
+                  </div>
 
-                <form onSubmit={handlePromoteSelectedUser}>
-                  <Group gap="sm" align="flex-end" wrap="wrap">
-                    <Select
-                      placeholder="Select a user by username..."
-                      data={nonCrewOptions}
-                      value={selectedPromoteUserId}
-                      onChange={setSelectedPromoteUserId}
-                      searchable
-                      clearable
-                      nothingFoundMessage="No non-crew users found"
-                      disabled={loading || !crewGroupConfigured}
-                      style={{ flex: 1, minWidth: 240 }}
-                    />
-                    <Button
-                      type="submit"
-                      color="cyan"
-                      leftSection={<IconUserPlus size={14} />}
-                      loading={Boolean(
-                        selectedPromoteUserId && busyUserId === selectedPromoteUserId
-                      )}
-                      disabled={
-                        !selectedPromoteUserId || !crewGroupConfigured || loading
-                      }
-                    >
-                      Promote to Crew
-                    </Button>
-                  </Group>
-                </form>
-              </Stack>
-            </Paper>
+                  <form onSubmit={handlePromoteSelectedUser}>
+                    <Group gap="sm" align="flex-end" wrap="wrap">
+                      <Select
+                        placeholder="Select a user by username..."
+                        data={nonCrewOptions}
+                        value={selectedPromoteUserId}
+                        onChange={setSelectedPromoteUserId}
+                        searchable
+                        clearable
+                        nothingFoundMessage="No non-crew users found"
+                        disabled={loading || !crewGroupConfigured}
+                        style={{ flex: 1, minWidth: 240 }}
+                      />
+                      <Button
+                        type="submit"
+                        color="cyan"
+                        leftSection={<IconUserPlus size={14} />}
+                        loading={Boolean(
+                          selectedPromoteUserId && busyUserId === selectedPromoteUserId
+                        )}
+                        disabled={
+                          !selectedPromoteUserId || !crewGroupConfigured || loading
+                        }
+                      >
+                        Promote to Crew
+                      </Button>
+                    </Group>
+                  </form>
+                </Stack>
+              </Paper>
+            )}
 
             {/* Active Crew List */}
             <Paper
@@ -906,16 +916,18 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                               >
                                 Edit Roles
                               </Button>
-                              <Button
-                                size="xs"
-                                color="red"
-                                variant="light"
-                                leftSection={<IconUserMinus size={14} />}
-                                loading={isBusy}
-                                onClick={() => setDemoteTarget(u)}
-                              >
-                                Demote
-                              </Button>
+                              {isFrAdmin && (
+                                <Button
+                                  size="xs"
+                                  color="red"
+                                  variant="light"
+                                  leftSection={<IconUserMinus size={14} />}
+                                  loading={isBusy}
+                                  onClick={() => setDemoteTarget(u)}
+                                >
+                                  Demote
+                                </Button>
+                              )}
                             </Group>
                           </Group>
                         </Paper>
@@ -945,43 +957,49 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                   Departments
                 </Text>
                 <Text size="xs" c="dimmed">
-                  Create and manage departments available for crew role assignments
+                  {isFrAdmin
+                    ? 'Create and manage departments available for crew role assignments'
+                    : 'View departments and rank assigned crew members'}
                 </Text>
               </div>
 
-              <form onSubmit={handleCreateDepartment}>
-                <Group gap="sm" align="flex-end" wrap="wrap">
-                  <TextInput
-                    label="Department Name"
-                    placeholder="e.g. ConOps"
-                    value={newDepartmentName}
-                    onChange={(e) => setNewDepartmentName(e.target.value)}
-                    style={{ flex: 1, minWidth: 200 }}
-                    maxLength={80}
-                  />
-                  <Select
-                    label="Parent Department (Optional)"
-                    placeholder="None (Top Level)"
-                    data={departmentSelectOptions}
-                    value={newDepartmentParentId}
-                    onChange={setNewDepartmentParentId}
-                    clearable
-                    searchable
-                    style={{ flex: 1, minWidth: 200 }}
-                  />
-                  <Button
-                    type="submit"
-                    color="cyan"
-                    leftSection={<IconPlus size={14} />}
-                    loading={creatingDepartment}
-                    disabled={!newDepartmentName.trim()}
-                  >
-                    Create Department
-                  </Button>
-                </Group>
-              </form>
+              {isFrAdmin && (
+                <>
+                  <form onSubmit={handleCreateDepartment}>
+                    <Group gap="sm" align="flex-end" wrap="wrap">
+                      <TextInput
+                        label="Department Name"
+                        placeholder="e.g. ConOps"
+                        value={newDepartmentName}
+                        onChange={(e) => setNewDepartmentName(e.target.value)}
+                        style={{ flex: 1, minWidth: 200 }}
+                        maxLength={80}
+                      />
+                      <Select
+                        label="Parent Department (Optional)"
+                        placeholder="None (Top Level)"
+                        data={departmentSelectOptions}
+                        value={newDepartmentParentId}
+                        onChange={setNewDepartmentParentId}
+                        clearable
+                        searchable
+                        style={{ flex: 1, minWidth: 200 }}
+                      />
+                      <Button
+                        type="submit"
+                        color="cyan"
+                        leftSection={<IconPlus size={14} />}
+                        loading={creatingDepartment}
+                        disabled={!newDepartmentName.trim()}
+                      >
+                        Create Department
+                      </Button>
+                    </Group>
+                  </form>
 
-              <Divider color="var(--mantine-color-dark-4)" />
+                  <Divider color="var(--mantine-color-dark-4)" />
+                </>
+              )}
 
               {loading ? (
                 <Group justify="center" gap="sm" py="md">
@@ -1039,31 +1057,38 @@ export function FrWorkspace({ currentUserId }: { currentUserId?: string }) {
                           >
                             <IconArrowsSort size={14} />
                           </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="gray"
-                            size="sm"
-                            title="Edit"
-                            aria-label="Edit department"
-                            onClick={() => {
-                              setEditDeptTarget(dept);
-                              setEditDeptName(dept.name);
-                              setEditDeptParentId(
-                                dept.parentDepartmentId ? String(dept.parentDepartmentId) : null
-                              );
-                            }}
-                          >
-                            <IconEdit size={14} />
-                          </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            title="Delete"
-                            onClick={() => setDeleteDeptTarget(dept)}
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
+                          {isFrAdmin && (
+                            <>
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                title="Edit"
+                                aria-label="Edit department"
+                                onClick={() => {
+                                  setEditDeptTarget(dept);
+                                  setEditDeptName(dept.name);
+                                  setEditDeptParentId(
+                                    dept.parentDepartmentId
+                                      ? String(dept.parentDepartmentId)
+                                      : null
+                                  );
+                                }}
+                              >
+                                <IconEdit size={14} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                title="Delete"
+                                aria-label="Delete department"
+                                onClick={() => setDeleteDeptTarget(dept)}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </>
+                          )}
                         </Group>
                       </Group>
                     </Paper>

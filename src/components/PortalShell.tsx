@@ -102,7 +102,9 @@ export function PortalShell({
   const router = useRouter();
   const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
   const isCrew = sessionUser?.roles?.includes('crew') ?? false;
-  const hasFurryResources = sessionUser?.roles?.includes('furry_ressources') ?? false;
+  const isFrAdmin = sessionUser?.roles?.includes('furry_ressources_admin') ?? false;
+  const hasFurryResources =
+    (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
 
   const activeTab: 'profile' | 'crew' | 'org-chart' | 'fr' | 'admin' =
     pathname.startsWith('/crew/org-chart') && isCrew
@@ -398,14 +400,15 @@ export function PortalShell({
           borderBottom: '1px solid var(--mantine-color-dark-4)',
         }}
       >
-        <Group h="100%" px="lg" justify="space-between">
-          <Group gap="sm">
+        <Group h="100%" px={{ base: 'sm', sm: 'lg' }} justify="space-between" wrap="nowrap" gap="xs">
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Burger
               opened={mobileNavOpened}
               onClick={toggleMobileNav}
               hiddenFrom="sm"
               size="sm"
               aria-label="Toggle navigation"
+              style={{ flexShrink: 0 }}
             />
             <Box
               style={{
@@ -419,57 +422,64 @@ export function PortalShell({
                 justifyContent: 'center',
                 fontWeight: 700,
                 fontSize: 13,
+                flexShrink: 0,
               }}
             >
               WTF
             </Box>
-            <Text fw={700} c="white" size="md" style={{ letterSpacing: '-0.3px' }}>
+            <Text
+              fw={700}
+              c="white"
+              size="md"
+              truncate
+              style={{ letterSpacing: '-0.3px', minWidth: 0 }}
+            >
               WinterFur Manage
             </Text>
           </Group>
 
-          <Group gap="md">
-            <Group gap="xs">
-              <Avatar
-                src={getSafeAvatarUrl(profile.avatarUrl)}
-                radius="xl"
-                size={32}
-                style={{
-                  backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: 12,
-                }}
-              >
-                {initials}
-              </Avatar>
-              <Text size="sm" fw={600} c="white">
-                {profile.nickname}
-              </Text>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                title="Sign out of WinterFur Manage"
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/auth/logout', { method: 'POST' });
-                    if (res.ok) {
-                      const data = (await res.json()) as { logoutUrl?: string };
-                      if (data.logoutUrl) {
-                        window.location.href = data.logoutUrl;
-                        return;
-                      }
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Avatar
+              src={getSafeAvatarUrl(profile.avatarUrl)}
+              radius="xl"
+              size={32}
+              style={{
+                backgroundColor: 'var(--mantine-primary-color-filled, #15aabf)',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: 12,
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </Avatar>
+            <Text size="sm" fw={600} c="white" visibleFrom="sm">
+              {profile.nickname}
+            </Text>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              aria-label="Sign out of WinterFur Manage"
+              title="Sign out of WinterFur Manage"
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/auth/logout', { method: 'POST' });
+                  if (res.ok) {
+                    const data = (await res.json()) as { logoutUrl?: string };
+                    if (data.logoutUrl) {
+                      window.location.href = data.logoutUrl;
+                      return;
                     }
-                  } catch {
-                    // Fallback to local signout
                   }
-                  window.location.href = '/api/auth/signout';
-                }}
-              >
-                <IconLogout size={16} />
-              </ActionIcon>
-            </Group>
+                } catch {
+                  // Fallback to local signout
+                }
+                window.location.href = '/api/auth/signout';
+              }}
+            >
+              <IconLogout size={16} />
+            </ActionIcon>
           </Group>
         </Group>
       </AppShell.Header>
@@ -1339,7 +1349,7 @@ export function PortalShell({
 
           {/* TAB 3: FURRY RESSOURCES (FR) */}
           {activeTab === 'fr' && hasFurryResources && (
-            <FrWorkspace currentUserId={sessionUser?.id} />
+            <FrWorkspace currentUserId={sessionUser?.id} isFrAdmin={isFrAdmin} />
           )}
 
           {/* TAB 4: ADMIN PORTAL SETTINGS */}

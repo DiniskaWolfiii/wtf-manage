@@ -4,7 +4,7 @@ import { requireSessionRole } from '@/lib/server-auth';
 import { sanitizeDepartmentName } from '@/lib/validation';
 
 export async function GET() {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole(['furry_ressources', 'furry_ressources_admin']);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireSessionRole('furry_ressources');
+  const authResult = await requireSessionRole('furry_ressources_admin');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

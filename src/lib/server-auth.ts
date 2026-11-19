@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
+import { NextResponse } from 'next/server';
 import { getToken, type JWT } from 'next-auth/jwt';
-import { getOrRefreshKeycloakToken } from '@/auth';
+import { auth, getOrRefreshKeycloakToken } from '@/auth';
 
 const ABSOLUTE_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const TOKEN_REFRESH_BUFFER_MS = 30 * 1000;
@@ -70,4 +71,24 @@ export async function getServerAccessToken(): Promise<string | undefined> {
 export async function getServerIdToken(): Promise<string | undefined> {
   const token = await getServerToken();
   return typeof token?.idToken === 'string' ? token.idToken : undefined;
+}
+
+/**
+ * Verify that the current request has an authenticated session with the required role.
+ * Returns either `{ userId }` or a `401`/`403` NextResponse.
+ */
+export async function requireSessionRole(
+  requiredRole: string
+): Promise<{ userId: string } | NextResponse> {
+  const session = await auth();
+  if (!session || !session.user || !session.user.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
+  if (!roles.includes(requiredRole)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  return { userId: session.user.id };
 }

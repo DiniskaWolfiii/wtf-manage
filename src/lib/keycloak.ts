@@ -426,3 +426,259 @@ export function buildKeycloakActionUrl(action: string, redirectUrl?: string): st
   return authUrl.toString();
 }
 
+export interface MinimalKeycloakUser {
+  id: string;
+  username: string;
+  avatarUrl?: string;
+}
+
+export interface KeycloakGroupSummary {
+  id: string;
+  name: string;
+  path: string;
+}
+
+/**
+ * List all Keycloak realm users with strictly minimal fields (id, username, avatarUrl)
+ * for FR crew promotion without exposing personal profile details.
+ */
+export async function listKeycloakUsersMinimal(): Promise<MinimalKeycloakUser[] | null> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+  if (!adminToken) {
+    return null;
+  }
+
+  const users: MinimalKeycloakUser[] = [];
+  const pageSize = 100;
+  let first = 0;
+
+  try {
+    while (true) {
+      const res = await fetch(
+        `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users?first=${first}&max=${pageSize}&briefRepresentation=false`,
+        {
+          headers: { Authorization: `Bearer ${adminToken}` },
+          cache: 'no-store',
+        }
+      );
+
+      if (res.status === 401) {
+        cachedAdminToken = null;
+        return null;
+      }
+      if (!res.ok) {
+        console.warn(`[Keycloak] Failed to list users: ${res.status}`);
+        return null;
+      }
+
+      const batch = (await res.json()) as Array<{
+        id?: string;
+        username?: string;
+        attributes?: Record<string, string[]>;
+      }>;
+
+      for (const u of batch) {
+        if (!u.id || !u.username) continue;
+        const rawAvatar = u.attributes?.avatarUrl?.[0];
+        users.push({
+          id: u.id,
+          username: u.username,
+          avatarUrl: rawAvatar && rawAvatar.trim() ? rawAvatar.trim() : undefined,
+        });
+      }
+
+      if (batch.length < pageSize) {
+        break;
+      }
+      first += pageSize;
+    }
+
+    return users.sort((a, b) => a.username.localeCompare(b.username));
+  } catch (err) {
+    console.error('[Keycloak] Error listing users:', err);
+    return null;
+  }
+}
+
+interface RawKeycloakGroup {
+  id?: string;
+  name?: string;
+  path?: string;
+  subGroups?: RawKeycloakGroup[];
+}
+
+function flattenKeycloakGroups(groups: RawKeycloakGroup[], out: KeycloakGroupSummary[] = []): KeycloakGroupSummary[] {
+  for (const g of groups) {
+    if (g.id && g.name) {
+      out.push({
+        id: g.id,
+        name: g.name,
+        path: g.path || `/${g.name}`,
+      });
+    }
+    if (Array.isArray(g.subGroups) && g.subGroups.length > 0) {
+      flattenKeycloakGroups(g.subGroups, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * List all Keycloak realm groups (flattened, including subgroups).
+ */
+export async function listKeycloakGroups(): Promise<KeycloakGroupSummary[] | null> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+  if (!adminToken) {
+    return null;
+  }
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/groups?briefRepresentation=false&max=500`,
+      {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        cache: 'no-store',
+      }
+    );
+
+    if (res.status === 401) {
+      cachedAdminToken = null;
+      return null;
+    }
+    if (!res.ok) {
+      console.warn(`[Keycloak] Failed to list groups: ${res.status}`);
+      return null;
+    }
+
+    const data = (await res.json()) as RawKeycloakGroup[];
+    return flattenKeycloakGroups(data).sort((a, b) => a.path.localeCompare(b.path));
+  } catch (err) {
+    console.error('[Keycloak] Error listing groups:', err);
+    return null;
+  }
+}
+
+/**
+ * Find a Keycloak group by exact name (e.g. `wtf-crew`).
+ */
+export async function getKeycloakGroupByName(groupName: string): Promise<KeycloakGroupSummary | null> {
+  const groups = await listKeycloakGroups();
+  if (!groups) {
+    return null;
+  }
+  return groups.find((g) => g.name === groupName) ?? null;
+}
+
+/**
+ * Fetch the set of Keycloak user IDs belonging to a specific group.
+ */
+export async function getGroupMemberIds(groupId: string): Promise<Set<string> | null> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+  if (!adminToken || !isSafePathSegment(groupId)) {
+    return null;
+  }
+
+  const members = new Set<string>();
+  const pageSize = 100;
+  let first = 0;
+
+  try {
+    while (true) {
+      const res = await fetch(
+        `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/groups/${encodeURIComponent(groupId)}/members?first=${first}&max=${pageSize}`,
+        {
+          headers: { Authorization: `Bearer ${adminToken}` },
+          cache: 'no-store',
+        }
+      );
+
+      if (res.status === 401) {
+        cachedAdminToken = null;
+        return null;
+      }
+      if (!res.ok) {
+        console.warn(`[Keycloak] Failed to fetch group members: ${res.status}`);
+        return null;
+      }
+
+      const batch = (await res.json()) as Array<{ id?: string }>;
+      for (const m of batch) {
+        if (m.id) {
+          members.add(m.id);
+        }
+      }
+
+      if (batch.length < pageSize) {
+        break;
+      }
+      first += pageSize;
+    }
+
+    return members;
+  } catch (err) {
+    console.error('[Keycloak] Error fetching group members:', err);
+    return null;
+  }
+}
+
+/**
+ * Add a Keycloak user to a group.
+ */
+export async function addUserToGroup(userId: string, groupId: string): Promise<boolean> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+  if (!adminToken || !isSafePathSegment(userId) || !isSafePathSegment(groupId)) {
+    return false;
+  }
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/groups/${encodeURIComponent(groupId)}`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      }
+    );
+
+    if (res.status === 401) {
+      cachedAdminToken = null;
+    }
+    return res.ok || res.status === 204;
+  } catch (err) {
+    console.error('[Keycloak] Error adding user to group:', err);
+    return false;
+  }
+}
+
+/**
+ * Remove a Keycloak user from a group.
+ */
+export async function removeUserFromGroup(userId: string, groupId: string): Promise<boolean> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+  if (!adminToken || !isSafePathSegment(userId) || !isSafePathSegment(groupId)) {
+    return false;
+  }
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/groups/${encodeURIComponent(groupId)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      }
+    );
+
+    if (res.status === 401) {
+      cachedAdminToken = null;
+    }
+    return res.ok || res.status === 204 || res.status === 404;
+  } catch (err) {
+    console.error('[Keycloak] Error removing user from group:', err);
+    return false;
+  }
+}
+

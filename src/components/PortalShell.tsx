@@ -42,8 +42,11 @@ import {
   IconUsersGroup,
   IconSitemap,
   IconHistory,
+  IconBuilding,
+  IconAward,
 } from '@tabler/icons-react';
 import type { UserCrewRole } from '@/lib/crew';
+import type { UserCrewSkill } from '@/lib/skills';
 import type { UserProfileData } from '@/lib/keycloak';
 import { FrWorkspace } from '@/components/FrWorkspace';
 import { AdminDepartmentMapping } from '@/components/AdminDepartmentMapping';
@@ -92,6 +95,7 @@ export function PortalShell({
   initialSettings,
   identityConfig,
   initialCrewRoles,
+  initialCrewSkills,
 }: {
   sessionUser?: SessionUser;
   initialProfile?: UserProfileData;
@@ -99,6 +103,7 @@ export function PortalShell({
   initialSettings?: PortalSettings;
   identityConfig?: IdentityDisplayConfig;
   initialCrewRoles?: UserCrewRole[];
+  initialCrewSkills?: UserCrewSkill[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -109,13 +114,25 @@ export function PortalShell({
     (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
   const canViewLogs = isAdmin || hasFurryResources;
 
-  const activeTab: 'profile' | 'crew' | 'org-chart' | 'fr' | 'admin' | 'logs' =
+  const activeTab:
+    | 'profile'
+    | 'crew'
+    | 'org-chart'
+    | 'fr-crew'
+    | 'fr-departments'
+    | 'fr-skills'
+    | 'admin'
+    | 'logs' =
     pathname.startsWith('/crew/org-chart') && isCrew
       ? 'org-chart'
       : pathname.startsWith('/crew') && isCrew
       ? 'crew'
+      : pathname.startsWith('/fr/departments') && hasFurryResources
+      ? 'fr-departments'
+      : pathname.startsWith('/fr/skills') && hasFurryResources
+      ? 'fr-skills'
       : pathname.startsWith('/fr') && hasFurryResources
-      ? 'fr'
+      ? 'fr-crew'
       : pathname.startsWith('/logs') && canViewLogs
       ? 'logs'
       : pathname.startsWith('/admin') && isAdmin
@@ -545,12 +562,30 @@ export function PortalShell({
                 Furry Resources
               </div>
               <NavLink
-                label="FR Dashboard"
+                label="Crew Management"
                 leftSection={<IconUsersGroup size={18} />}
-                active={activeTab === 'fr'}
+                active={activeTab === 'fr-crew'}
                 onClick={() => {
                   closeMobileNav();
-                  router.push('/fr');
+                  router.push('/fr/crew');
+                }}
+              />
+              <NavLink
+                label="Departments"
+                leftSection={<IconBuilding size={18} />}
+                active={activeTab === 'fr-departments'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/fr/departments');
+                }}
+              />
+              <NavLink
+                label="Skills"
+                leftSection={<IconAward size={18} />}
+                active={activeTab === 'fr-skills'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/fr/skills');
                 }}
               />
               {!isAdmin && (
@@ -1348,12 +1383,19 @@ export function PortalShell({
                         <div className="uppercase-label" style={{ marginBottom: 8 }}>
                           My Skills (FR Managed)
                         </div>
-                        <Group gap="xs">
-                          <Pill size="md">German - Native</Pill>
-                          <Pill size="md">English - B2</Pill>
-                          <Pill size="md">Communication - Advanced</Pill>
-                          <Pill size="md">First Aid - Basic</Pill>
-                        </Group>
+                        {initialCrewSkills && initialCrewSkills.length > 0 ? (
+                          <Group gap="xs">
+                            {initialCrewSkills.map((skill) => (
+                              <Pill key={skill.skillId} size="md">
+                                {skill.skillName} - {skill.level}
+                              </Pill>
+                            ))}
+                          </Group>
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            No skills assigned yet.
+                          </Text>
+                        )}
                       </div>
 
                       <Divider color="var(--mantine-color-dark-4)" />
@@ -1373,9 +1415,22 @@ export function PortalShell({
           {activeTab === 'org-chart' && isCrew && <OrgChartWorkspace />}
 
           {/* TAB 3: FURRY RESSOURCES (FR) */}
-          {activeTab === 'fr' && hasFurryResources && (
-            <FrWorkspace currentUserId={sessionUser?.id} isFrAdmin={isFrAdmin} />
-          )}
+          {(activeTab === 'fr-crew' ||
+            activeTab === 'fr-departments' ||
+            activeTab === 'fr-skills') &&
+            hasFurryResources && (
+              <FrWorkspace
+                currentUserId={sessionUser?.id}
+                isFrAdmin={isFrAdmin}
+                section={
+                  activeTab === 'fr-departments'
+                    ? 'departments'
+                    : activeTab === 'fr-skills'
+                    ? 'skills'
+                    : 'crew'
+                }
+              />
+            )}
 
           {/* TAB 4: ADMIN PORTAL SETTINGS */}
           {activeTab === 'admin' && isAdmin && (

@@ -7,11 +7,15 @@ export type AuditAction =
   | 'crew.promote'
   | 'crew.demote'
   | 'crew.roles_updated'
+  | 'crew.skills_updated'
   | 'department.created'
   | 'department.updated'
   | 'department.deleted'
   | 'department.order_updated'
   | 'department.keycloak_mapped'
+  | 'skill.created'
+  | 'skill.updated'
+  | 'skill.deleted'
   | 'settings.updated'
   | 'profile.updated'
   | 'profile.avatar_updated'
@@ -22,7 +26,7 @@ export interface RecordAuditLogInput {
   action: AuditAction;
   actorUserId?: string | null;
   actorUsername?: string | null;
-  targetType?: 'user' | 'department' | 'settings' | 'credential' | 'session' | null;
+  targetType?: 'user' | 'department' | 'skill' | 'settings' | 'credential' | 'session' | null;
   targetId?: string | null;
   targetLabel?: string | null;
   summary: string;
@@ -206,7 +210,8 @@ export async function queryAuditLogs(params: QueryAuditLogsParams): Promise<{
   }
 
   if (params.q && params.q.trim()) {
-    const pattern = `%${params.q.trim()}%`;
+    const escapedQ = params.q.trim().slice(0, 120).replace(/[\\%_]/g, '\\$&');
+    const pattern = `%${escapedQ}%`;
     whereClauses.push(
       '(actor_username LIKE ? OR target_label LIKE ? OR summary LIKE ? OR action LIKE ?)'
     );

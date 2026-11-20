@@ -257,3 +257,126 @@ export function sanitizeCrewAssignmentsPayload(
 
   return clean;
 }
+
+const MAX_SKILL_NAME_LENGTH = 80;
+const MAX_SKILL_CATEGORY_LENGTH = 60;
+const MAX_SKILL_LEVEL_LENGTH = 40;
+const MAX_SKILL_LEVELS_COUNT = 20;
+const MAX_SKILLS_PER_USER = 40;
+
+/**
+ * Validate and trim a skill name (1-80 characters).
+ */
+export function sanitizeSkillName(raw: unknown): string | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > MAX_SKILL_NAME_LENGTH) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Validate and trim a skill category (1-60 characters, defaults to 'General' when empty).
+ */
+export function sanitizeSkillCategory(raw: unknown): string | null {
+  if (raw === undefined || raw === null) {
+    return 'General';
+  }
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return 'General';
+  }
+  if (trimmed.length > MAX_SKILL_CATEGORY_LENGTH) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Validate an array of skill levels (1-20 unique non-empty strings, max 40 chars each).
+ */
+export function sanitizeSkillLevels(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_SKILL_LEVELS_COUNT * 2) {
+    return null;
+  }
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') {
+      return null;
+    }
+    const trimmed = item.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed.length > MAX_SKILL_LEVEL_LENGTH) {
+      return null;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    clean.push(trimmed);
+    if (clean.length > MAX_SKILL_LEVELS_COUNT) {
+      return null;
+    }
+  }
+  if (clean.length === 0) {
+    return null;
+  }
+  return clean;
+}
+
+/**
+ * Validate a crew skills assignment payload (`{ skills: [{ skillId, level }] }`).
+ * Rejects duplicate skillIds.
+ */
+export function sanitizeCrewSkillsPayload(
+  body: unknown
+): Array<{ skillId: number; level: string }> | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return null;
+  }
+  const input = body as Record<string, unknown>;
+  if (!Array.isArray(input.skills) || input.skills.length > MAX_SKILLS_PER_USER) {
+    return null;
+  }
+
+  const seenSkills = new Set<number>();
+  const clean: Array<{ skillId: number; level: string }> = [];
+
+  for (const item of input.skills) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return null;
+    }
+    const raw = item as Record<string, unknown>;
+    if (
+      typeof raw.skillId !== 'number' ||
+      !Number.isInteger(raw.skillId) ||
+      raw.skillId <= 0
+    ) {
+      return null;
+    }
+    if (seenSkills.has(raw.skillId)) {
+      return null;
+    }
+    if (typeof raw.level !== 'string') {
+      return null;
+    }
+    const level = raw.level.trim();
+    if (!level || level.length > MAX_SKILL_LEVEL_LENGTH) {
+      return null;
+    }
+    seenSkills.add(raw.skillId);
+    clean.push({ skillId: raw.skillId, level });
+  }
+
+  return clean;
+}

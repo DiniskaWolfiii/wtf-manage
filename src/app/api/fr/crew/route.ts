@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { listAllCrewAssignments, listDepartments } from '@/lib/crew';
+import { listAllCrewSkills, listSkills } from '@/lib/skills';
 import {
   getGroupMemberIds,
   getKeycloakGroupByName,
@@ -20,12 +21,15 @@ export async function GET() {
   const isFrAdmin = authResult.roles.includes('furry_ressources_admin');
 
   try {
-    const [kcUsers, crewGroup, departments, assignments] = await Promise.all([
-      listKeycloakUsersMinimal(),
-      getKeycloakGroupByName(CREW_GROUP_NAME),
-      listDepartments(),
-      listAllCrewAssignments(),
-    ]);
+    const [kcUsers, crewGroup, departments, assignments, skillsCatalog, crewSkills] =
+      await Promise.all([
+        listKeycloakUsersMinimal(),
+        getKeycloakGroupByName(CREW_GROUP_NAME),
+        listDepartments(),
+        listAllCrewAssignments(),
+        listSkills(),
+        listAllCrewSkills(),
+      ]);
 
     if (!kcUsers) {
       return NextResponse.json(
@@ -53,12 +57,28 @@ export async function GET() {
       assignmentsByUser.set(a.userId, list);
     }
 
+    const skillsByUser = new Map<
+      string,
+      Array<{ skillId: number; skillName: string; category: string; level: string }>
+    >();
+    for (const s of crewSkills) {
+      const list = skillsByUser.get(s.userId) ?? [];
+      list.push({
+        skillId: s.skillId,
+        skillName: s.skillName,
+        category: s.category,
+        level: s.level,
+      });
+      skillsByUser.set(s.userId, list);
+    }
+
     const allUsers = kcUsers.map((u) => ({
       id: u.id,
       username: u.username,
       avatarUrl: getSafeAvatarUrl(u.avatarUrl) ?? undefined,
       isCrew: crewMemberIds.has(u.id),
       roles: assignmentsByUser.get(u.id) ?? [],
+      skills: skillsByUser.get(u.id) ?? [],
     }));
 
     // Standard FR only receives active crew members; FR Admin also sees non-crew users for promotion
@@ -69,6 +89,7 @@ export async function GET() {
       isFrAdmin,
       users,
       departments,
+      skillsCatalog,
     });
   } catch (err) {
     console.error('[API] GET /api/fr/crew failed:', (err as Error).message);

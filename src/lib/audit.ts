@@ -8,6 +8,8 @@ export type AuditAction =
   | 'crew.demote'
   | 'crew.roles_updated'
   | 'crew.skills_updated'
+  | 'crew.master_data_updated'
+  | 'crew.profiles_synced'
   | 'department.created'
   | 'department.updated'
   | 'department.deleted'

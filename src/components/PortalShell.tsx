@@ -113,6 +113,8 @@ export function PortalShell({
   const hasFurryResources =
     (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
   const canViewLogs = isAdmin || hasFurryResources;
+  const frCrewDetailMatch = pathname.match(/^\/fr\/crew\/([^/]+)$/);
+  const frCrewDetailUserId = frCrewDetailMatch ? decodeURIComponent(frCrewDetailMatch[1]) : null;
 
   const activeTab:
     | 'profile'
@@ -1422,6 +1424,7 @@ export function PortalShell({
               <FrWorkspace
                 currentUserId={sessionUser?.id}
                 isFrAdmin={isFrAdmin}
+                detailUserId={frCrewDetailUserId ?? undefined}
                 section={
                   activeTab === 'fr-departments'
                     ? 'departments'

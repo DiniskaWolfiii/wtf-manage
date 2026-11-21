@@ -1,3 +1,7 @@
+import type { CrewLifecycleEvent, CrewProfile, CrewStatus } from '@/lib/crew-profiles';
+
+export type { CrewLifecycleEvent, CrewProfile, CrewStatus };
+
 export interface DepartmentItem {
   id: number;
   name: string;
@@ -32,6 +36,10 @@ export interface FrUserItem {
   username: string;
   avatarUrl?: string;
   isCrew: boolean;
+  status: CrewStatus | null;
+  joinedAt: string | null;
+  offboardedAt: string | null;
+  hasMasterProfile: boolean;
   roles: CrewRoleItem[];
   skills: CrewSkillItem[];
 }

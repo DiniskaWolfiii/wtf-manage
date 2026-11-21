@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
+import { syncKeycloakSnapshotIfExists } from '@/lib/crew-profiles';
 import { fetchKeycloakUser, updateKeycloakUser, UserProfileData } from '@/lib/keycloak';
 import { getServerAccessToken } from '@/lib/server-auth';
 import { sanitizeProfileUpdate } from '@/lib/validation';
@@ -66,6 +67,8 @@ export async function PUT(req: Request) {
     const success = await updateKeycloakUser(userId, sanitizedBody, accessToken);
 
     if (success) {
+      await syncKeycloakSnapshotIfExists(userId, sanitizedBody);
+
       const changes: Record<string, { from: string; to: string }> = {};
       for (const [key, nextVal] of Object.entries(sanitizedBody)) {
         if (typeof nextVal !== 'string') continue;

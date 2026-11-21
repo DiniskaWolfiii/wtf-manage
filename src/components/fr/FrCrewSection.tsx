@@ -1,18 +1,19 @@
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   ActionIcon,
   Avatar,
   Badge,
   Button,
   Divider,
-  Grid,
   Group,
   Loader,
   Modal,
   Paper,
   Pill,
+  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -22,18 +23,16 @@ import {
   IconAward,
   IconEdit,
   IconPlus,
+  IconRefresh,
   IconSearch,
   IconTrash,
   IconUser,
   IconUserMinus,
   IconUserPlus,
 } from '@tabler/icons-react';
-import type { UserProfileData } from '@/lib/keycloak';
 import { getSafeAvatarUrl } from '@/lib/validation';
 import {
   DARK_MODAL_STYLES,
-  type CrewRoleItem,
-  type CrewSkillItem,
   type DepartmentItem,
   type FrStatusMessage,
   type FrUserItem,
@@ -75,16 +74,10 @@ export function FrCrewSection({
 }) {
   const [selectedPromoteUserId, setSelectedPromoteUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'on_leave' | 'offboarded' | 'all'>('active');
+  const [syncingProfiles, setSyncingProfiles] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [demoteTarget, setDemoteTarget] = useState<FrUserItem | null>(null);
-
-  // View Profile modal state
-  const [viewingUser, setViewingUser] = useState<FrUserItem | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(false);
-  const [viewedProfile, setViewedProfile] = useState<UserProfileData | null>(null);
-  const [viewedRoles, setViewedRoles] = useState<CrewRoleItem[]>([]);
-  const [viewedSkills, setViewedSkills] = useState<CrewSkillItem[]>([]);
-  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Edit Roles modal state
   const [editingRolesUser, setEditingRolesUser] = useState<FrUserItem | null>(null);
@@ -112,16 +105,46 @@ export function FrCrewSection({
   const crewMembers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return users.filter((u) => {
-      if (!u.isCrew) return false;
+      if (!u.isCrew && !u.hasMasterProfile) return false;
+      const effectiveStatus = u.status ?? (u.isCrew ? 'active' : 'offboarded');
+      if (statusFilter !== 'all' && effectiveStatus !== statusFilter) return false;
       if (q && !u.username.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [users, searchQuery]);
+  }, [users, searchQuery, statusFilter]);
 
   const totalCrewCount = useMemo(
     () => users.filter((u) => u.isCrew).length,
     [users]
   );
+
+  const handleSyncFromKeycloak = async () => {
+    setSyncingProfiles(true);
+    onStatusMessage(null);
+    try {
+      const res = await fetch('/api/fr/crew', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        onStatusMessage({
+          type: 'error',
+          text: data.error || 'Failed to sync crew profiles from Keycloak.',
+        });
+        return;
+      }
+      onStatusMessage({
+        type: 'success',
+        text: `Keycloak sync complete (${data.created ?? 0} created, ${data.updated ?? 0} updated).`,
+      });
+      await onRefresh();
+    } catch {
+      onStatusMessage({
+        type: 'error',
+        text: 'Network error while syncing crew profiles.',
+      });
+    } finally {
+      setSyncingProfiles(false);
+    }
+  };
 
   const departmentSelectOptions = useMemo(
     () => departments.map((d) => ({ value: String(d.id), label: d.name })),
@@ -158,20 +181,20 @@ export function FrCrewSection({
       if (!res.ok) {
         onStatusMessage({
           type: 'error',
-          text: data.error || 'Failed to promote user to Crew.',
+          text: data.error || 'Failed to onboard user to Crew.',
         });
         return;
       }
       setSelectedPromoteUserId(null);
       onStatusMessage({
         type: 'success',
-        text: `"${targetUser.username}" has been promoted to Crew (wtf-crew). Please inform them that a re-login is required.`,
+        text: `"${targetUser.username}" has been onboarded to Crew (wtf-crew). Please inform them that a re-login is required.`,
       });
       await onRefresh();
     } catch {
       onStatusMessage({
         type: 'error',
-        text: 'Network error while promoting user.',
+        text: 'Network error while onboarding user.',
       });
     } finally {
       setBusyUserId(null);
@@ -190,7 +213,7 @@ export function FrCrewSection({
       if (!res.ok) {
         onStatusMessage({
           type: 'error',
-          text: data.error || 'Failed to demote user.',
+          text: data.error || 'Failed to offboard user.',
         });
         return;
       }
@@ -198,13 +221,13 @@ export function FrCrewSection({
       setDemoteTarget(null);
       onStatusMessage({
         type: 'success',
-        text: `"${username}" has been demoted. Crew group, mapped Keycloak groups, and all assignments were removed (re-login required).`,
+        text: `"${username}" has been offboarded. Crew group, mapped Keycloak groups, and active assignments were removed (re-login required).`,
       });
       await onRefresh();
     } catch {
       onStatusMessage({
         type: 'error',
-        text: 'Network error while demoting user.',
+        text: 'Network error while offboarding user.',
       });
     } finally {
       setBusyUserId(null);
@@ -402,36 +425,6 @@ export function FrCrewSection({
     }
   };
 
-  const openProfileViewer = async (user: FrUserItem) => {
-    setViewingUser(user);
-    setViewedProfile(null);
-    setViewedRoles(user.roles);
-    setViewedSkills(user.skills);
-    setProfileError(null);
-    setLoadingProfile(true);
-    try {
-      const res = await fetch(`/api/fr/crew/${encodeURIComponent(user.id)}`, {
-        cache: 'no-store',
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setProfileError(data.error || 'Failed to load crew member profile.');
-        return;
-      }
-      setViewedProfile(data.profile ?? null);
-      if (Array.isArray(data.roles)) {
-        setViewedRoles(data.roles);
-      }
-      if (Array.isArray(data.skills)) {
-        setViewedSkills(data.skills);
-      }
-    } catch {
-      setProfileError('Network error while loading crew member profile.');
-    } finally {
-      setLoadingProfile(false);
-    }
-  };
-
   return (
     <>
       <Stack gap={24}>
@@ -449,7 +442,7 @@ export function FrCrewSection({
             <Stack gap="md">
               <div>
                 <Text size="md" fw={700} c="white">
-                  Promote User to Crew
+                  Onboard User to Crew
                 </Text>
                 <Text size="xs" c="dimmed">
                   Search by username in the dropdown to add a user to the <code>wtf-crew</code>{' '}
@@ -479,7 +472,7 @@ export function FrCrewSection({
                     )}
                     disabled={!selectedPromoteUserId || !crewGroupConfigured || loading}
                   >
-                    Promote to Crew
+                    Onboard to Crew
                   </Button>
                 </Group>
               </form>
@@ -502,25 +495,54 @@ export function FrCrewSection({
               <div>
                 <Group gap="xs">
                   <Text size="md" fw={700} c="white">
-                    Active Crew Members
+                    Crew &amp; Master Data
                   </Text>
                   <Badge size="xs" variant="light" color="cyan">
-                    {totalCrewCount}
+                    {crewMembers.length} / {totalCrewCount} active
                   </Badge>
                 </Group>
                 <Text size="xs" c="dimmed">
-                  Manage crew roles, departments, and FR-managed skills
+                  Manage crew status, master data, departments, and FR-managed skills
                 </Text>
               </div>
-              <TextInput
-                placeholder="Filter crew..."
-                leftSection={<IconSearch size={14} />}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                size="xs"
-                style={{ minWidth: 220 }}
-              />
+              <Group gap="xs" wrap="wrap">
+                {isFrAdmin && (
+                  <Button
+                    size="xs"
+                    variant="default"
+                    leftSection={<IconRefresh size={14} />}
+                    loading={syncingProfiles}
+                    disabled={loading || !crewGroupConfigured}
+                    onClick={() => void handleSyncFromKeycloak()}
+                  >
+                    Sync Keycloak
+                  </Button>
+                )}
+                <TextInput
+                  placeholder="Filter crew..."
+                  leftSection={<IconSearch size={14} />}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  size="xs"
+                  style={{ minWidth: 200 }}
+                />
+              </Group>
             </Group>
+
+            <SegmentedControl
+              size="xs"
+              value={statusFilter}
+              onChange={(val) =>
+                setStatusFilter(val as 'active' | 'on_leave' | 'offboarded' | 'all')
+              }
+              data={[
+                { value: 'active', label: 'Active' },
+                { value: 'on_leave', label: 'On Leave' },
+                { value: 'offboarded', label: 'Offboarded' },
+                { value: 'all', label: 'All' },
+              ]}
+              w="fit-content"
+            />
 
             {loading ? (
               <Group justify="center" gap="sm" py="xl">
@@ -532,7 +554,7 @@ export function FrCrewSection({
             ) : crewMembers.length === 0 ? (
               <Text size="sm" c="dimmed" py="md" ta="center">
                 {totalCrewCount === 0
-                  ? 'No crew members promoted yet. Use the dropdown above to promote someone.'
+                  ? 'No crew members onboarded yet. Use the dropdown above to onboard someone.'
                   : 'No crew members match your filter.'}
               </Text>
             ) : (
@@ -562,8 +584,15 @@ export function FrCrewSection({
                             {u.username.slice(0, 2).toUpperCase()}
                           </Avatar>
                           <div style={{ minWidth: 0 }}>
-                            <Group gap={6} wrap="nowrap">
-                              <Text size="sm" fw={600} c="white" truncate>
+                            <Group gap={6} wrap="wrap">
+                              <Text
+                                component={Link}
+                                href={`/fr/crew/${encodeURIComponent(u.id)}`}
+                                size="sm"
+                                fw={600}
+                                c="white"
+                                style={{ textDecoration: 'none' }}
+                              >
                                 {u.username}
                               </Text>
                               {u.id === currentUserId && (
@@ -571,9 +600,33 @@ export function FrCrewSection({
                                   You
                                 </Badge>
                               )}
-                              <Badge size="xs" variant="light" color="teal">
-                                Crew
+                              <Badge
+                                size="xs"
+                                variant="light"
+                                color={
+                                  u.status === 'on_leave'
+                                    ? 'yellow'
+                                    : u.status === 'offboarded'
+                                    ? 'gray'
+                                    : 'teal'
+                                }
+                              >
+                                {u.status === 'on_leave'
+                                  ? 'On Leave'
+                                  : u.status === 'offboarded'
+                                  ? 'Offboarded'
+                                  : 'Active'}
                               </Badge>
+                              {u.joinedAt && u.status !== 'offboarded' && (
+                                <Text size="xs" c="dimmed">
+                                  since {new Date(u.joinedAt).toISOString().slice(0, 10)}
+                                </Text>
+                              )}
+                              {u.offboardedAt && u.status === 'offboarded' && (
+                                <Text size="xs" c="dimmed">
+                                  until {new Date(u.offboardedAt).toISOString().slice(0, 10)}
+                                </Text>
+                              )}
                             </Group>
                             <Group gap={6} mt={6}>
                               {u.roles.length > 0 ? (
@@ -609,33 +662,38 @@ export function FrCrewSection({
 
                         <Group gap="xs" wrap="wrap">
                           <Button
+                            component={Link}
+                            href={`/fr/crew/${encodeURIComponent(u.id)}`}
                             size="xs"
                             variant="default"
                             leftSection={<IconUser size={14} />}
                             disabled={isBusy}
-                            onClick={() => void openProfileViewer(u)}
                           >
                             View Profile
                           </Button>
-                          <Button
-                            size="xs"
-                            variant="default"
-                            leftSection={<IconEdit size={14} />}
-                            disabled={isBusy}
-                            onClick={() => openRoleEditor(u)}
-                          >
-                            Edit Roles
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="default"
-                            leftSection={<IconAward size={14} />}
-                            disabled={isBusy}
-                            onClick={() => openSkillEditor(u)}
-                          >
-                            Edit Skills
-                          </Button>
-                          {isFrAdmin && (
+                          {u.isCrew && (
+                            <>
+                              <Button
+                                size="xs"
+                                variant="default"
+                                leftSection={<IconEdit size={14} />}
+                                disabled={isBusy}
+                                onClick={() => openRoleEditor(u)}
+                              >
+                                Edit Roles
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="default"
+                                leftSection={<IconAward size={14} />}
+                                disabled={isBusy}
+                                onClick={() => openSkillEditor(u)}
+                              >
+                                Edit Skills
+                              </Button>
+                            </>
+                          )}
+                          {isFrAdmin && u.isCrew && (
                             <Button
                               size="xs"
                               color="red"
@@ -644,7 +702,7 @@ export function FrCrewSection({
                               loading={isBusy}
                               onClick={() => setDemoteTarget(u)}
                             >
-                              Demote
+                              Offboard
                             </Button>
                           )}
                         </Group>
@@ -658,20 +716,20 @@ export function FrCrewSection({
         </Paper>
       </Stack>
 
-      {/* Modal: Demote User */}
+      {/* Modal: Offboard Crew Member */}
       <Modal
         opened={Boolean(demoteTarget)}
         onClose={() => setDemoteTarget(null)}
-        title="Demote User"
+        title="Offboard Crew Member"
         centered
         styles={DARK_MODAL_STYLES}
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Are you sure you want to demote{' '}
+            Are you sure you want to offboard{' '}
             <strong style={{ color: '#fff' }}>{demoteTarget?.username}</strong>? This will remove
-            the <code>wtf-crew</code> group, all mapped department groups in Keycloak, and all
-            department &amp; skill assignments in the database.
+            the <code>wtf-crew</code> group, all mapped department groups in Keycloak, and active
+            department &amp; skill assignments while preserving their master-data record.
           </Text>
           <Group justify="flex-end" gap="xs">
             <Button variant="default" size="xs" onClick={() => setDemoteTarget(null)}>
@@ -683,7 +741,7 @@ export function FrCrewSection({
               loading={Boolean(demoteTarget && busyUserId === demoteTarget.id)}
               onClick={handleConfirmDemote}
             >
-              Confirm Demote
+              Confirm Offboard
             </Button>
           </Group>
         </Stack>
@@ -904,246 +962,6 @@ export function FrCrewSection({
         </form>
       </Modal>
 
-      {/* Modal: View Crew Member Profile */}
-      <Modal
-        opened={Boolean(viewingUser)}
-        onClose={() => setViewingUser(null)}
-        title={`Crew Profile: ${viewingUser?.username ?? ''}`}
-        size="lg"
-        centered
-        styles={DARK_MODAL_STYLES}
-      >
-        {loadingProfile ? (
-          <Group justify="center" gap="sm" py="xl">
-            <Loader size="sm" color="cyan" />
-            <Text size="sm" c="dimmed">
-              Loading profile...
-            </Text>
-          </Group>
-        ) : profileError ? (
-          <Stack gap="md">
-            <Paper
-              p="sm"
-              radius="sm"
-              withBorder
-              style={{
-                backgroundColor: 'rgba(250, 82, 82, 0.1)',
-                borderColor: 'rgba(250, 82, 82, 0.35)',
-              }}
-            >
-              <Text size="xs" fw={600} c="red.4">
-                {profileError}
-              </Text>
-            </Paper>
-            <Group justify="flex-end">
-              <Button variant="default" size="xs" onClick={() => setViewingUser(null)}>
-                Close
-              </Button>
-            </Group>
-          </Stack>
-        ) : viewedProfile ? (
-          <Stack gap="md">
-            {/* Header Summary */}
-            <Paper
-              p="md"
-              radius="sm"
-              withBorder
-              style={{
-                backgroundColor: 'var(--mantine-color-dark-6)',
-                borderColor: 'var(--mantine-color-dark-4)',
-              }}
-            >
-              <Group gap="md" align="center" wrap="wrap">
-                <Avatar
-                  src={getSafeAvatarUrl(viewedProfile.avatarUrl) ?? undefined}
-                  radius="xl"
-                  size="lg"
-                  color="cyan"
-                >
-                  {viewedProfile.username.slice(0, 2).toUpperCase()}
-                </Avatar>
-                <div style={{ flex: 1, minWidth: 180 }}>
-                  <Group gap="xs" wrap="wrap">
-                    <Text size="md" fw={700} c="white">
-                      {viewedProfile.nickname || viewedProfile.username}
-                    </Text>
-                    <Badge size="xs" variant="light" color="teal">
-                      Crew
-                    </Badge>
-                  </Group>
-                  <Text size="xs" c="dimmed">
-                    @{viewedProfile.username}
-                  </Text>
-                  <Group gap={6} mt={8}>
-                    {viewedRoles.length > 0 ? (
-                      viewedRoles.map((r) => (
-                        <Pill key={r.departmentId} size="sm">
-                          {r.position
-                            ? `${r.departmentName} · ${r.position}`
-                            : r.departmentName}
-                        </Pill>
-                      ))
-                    ) : (
-                      <Text size="xs" c="dimmed">
-                        No departments assigned yet
-                      </Text>
-                    )}
-                  </Group>
-                </div>
-              </Group>
-            </Paper>
-
-            <Grid gap="md">
-              {/* Personal & Furry Info */}
-              <Grid.Col span={{ base: 12, sm: 6 }}>
-                <Paper
-                  p="md"
-                  radius="sm"
-                  withBorder
-                  style={{
-                    backgroundColor: 'var(--mantine-color-dark-6)',
-                    borderColor: 'var(--mantine-color-dark-4)',
-                    height: '100%',
-                  }}
-                >
-                  <Stack gap="xs">
-                    <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                      Personal &amp; Identity
-                    </Text>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Full Name
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {[viewedProfile.firstName, viewedProfile.lastName]
-                          .filter(Boolean)
-                          .join(' ') || '—'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Species / Pronouns
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {[viewedProfile.species, viewedProfile.pronouns]
-                          .filter(Boolean)
-                          .join(' · ') || '—'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Telegram
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {viewedProfile.telegram || '—'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Date of Birth
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {viewedProfile.dob || '—'}
-                      </Text>
-                    </div>
-                  </Stack>
-                </Paper>
-              </Grid.Col>
-
-              {/* Contact & Address */}
-              <Grid.Col span={{ base: 12, sm: 6 }}>
-                <Paper
-                  p="md"
-                  radius="sm"
-                  withBorder
-                  style={{
-                    backgroundColor: 'var(--mantine-color-dark-6)',
-                    borderColor: 'var(--mantine-color-dark-4)',
-                    height: '100%',
-                  }}
-                >
-                  <Stack gap="xs">
-                    <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                      Contact &amp; Address
-                    </Text>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Email
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {viewedProfile.email || '—'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Phone
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {viewedProfile.phone || '—'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">
-                        Address
-                      </Text>
-                      <Text size="sm" fw={600} c="white">
-                        {[
-                          viewedProfile.street,
-                          [viewedProfile.zip, viewedProfile.city].filter(Boolean).join(' '),
-                          viewedProfile.country,
-                        ]
-                          .filter(Boolean)
-                          .join(', ') || '—'}
-                      </Text>
-                    </div>
-                  </Stack>
-                </Paper>
-              </Grid.Col>
-            </Grid>
-
-            {/* FR-Managed Skills */}
-            <Paper
-              p="md"
-              radius="sm"
-              withBorder
-              style={{
-                backgroundColor: 'var(--mantine-color-dark-6)',
-                borderColor: 'var(--mantine-color-dark-4)',
-              }}
-            >
-              <Stack gap="xs">
-                <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                  <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                    FR-Managed Skills
-                  </Text>
-                  <Badge size="sm" variant="light" color="teal">
-                    Active Crew (wtf-crew)
-                  </Badge>
-                </Group>
-                {viewedSkills.length > 0 ? (
-                  <Group gap={6}>
-                    {viewedSkills.map((s) => (
-                      <Pill key={s.skillId} size="sm">
-                        {s.skillName} - {s.level}
-                      </Pill>
-                    ))}
-                  </Group>
-                ) : (
-                  <Text size="xs" c="dimmed">
-                    No skills assigned yet.
-                  </Text>
-                )}
-              </Stack>
-            </Paper>
-
-            <Group justify="flex-end">
-              <Button variant="default" size="xs" onClick={() => setViewingUser(null)}>
-                Close
-              </Button>
-            </Group>
-          </Stack>
-        ) : null}
-      </Modal>
     </>
   );
 }

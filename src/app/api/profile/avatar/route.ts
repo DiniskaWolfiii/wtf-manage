@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
+import { syncKeycloakSnapshotIfExists } from '@/lib/crew-profiles';
 import { fetchKeycloakUser, updateKeycloakUser } from '@/lib/keycloak';
 import { getServerAccessToken } from '@/lib/server-auth';
 import { deleteAvatarByUrl, isStorageConfigured, uploadAvatarBuffer } from '@/lib/storage';
@@ -102,6 +103,8 @@ export async function POST(req: Request) {
     );
   }
 
+  await syncKeycloakSnapshotIfExists(userId, { avatarUrl: newAvatarUrl });
+
   if (previousAvatarUrl && previousAvatarUrl !== newAvatarUrl) {
     await deleteAvatarByUrl(previousAvatarUrl, userId).catch((err) => {
       console.error('Failed to delete previous avatar from R2:', err);
@@ -145,6 +148,8 @@ export async function DELETE() {
       { status: 502 }
     );
   }
+
+  await syncKeycloakSnapshotIfExists(userId, { avatarUrl: '' });
 
   if (currentProfile?.avatarUrl) {
     await deleteAvatarByUrl(currentProfile.avatarUrl, userId).catch((err) => {

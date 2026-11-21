@@ -8,23 +8,32 @@ import {
   replaceUserCrewAssignments,
 } from '@/lib/crew';
 import {
+  addCrewLifecycleEvent,
+  getCrewProfile,
+  listCrewLifecycleEvents,
+  markCrewProfileOffboarded,
+  refreshCrewProfileKeycloakSnapshot,
+  upsertCrewProfileOnPromote,
+} from '@/lib/crew-profiles';
+import {
   addUserToGroup,
   fetchKeycloakUser,
   getGroupMemberIds,
   getKeycloakGroupByName,
   removeUserFromGroup,
 } from '@/lib/keycloak';
+import { requireSessionRole } from '@/lib/server-auth';
 import {
   deleteAllUserCrewSkills,
   getCrewSkillsForUser,
   listSkills,
   replaceUserCrewSkills,
 } from '@/lib/skills';
-import { requireSessionRole } from '@/lib/server-auth';
 import {
   getSafeAvatarUrl,
   sanitizeCrewAssignmentsPayload,
   sanitizeCrewSkillsPayload,
+  sanitizeOffboardPayload,
 } from '@/lib/validation';
 
 const CREW_GROUP_NAME = 'wtf-crew';
@@ -38,8 +47,63 @@ function isValidUserId(userId: string): boolean {
   );
 }
 
+function describeRoleChanges(
+  previousRoles: Array<{ departmentId: number; departmentName: string; position: string }>,
+  updatedRoles: Array<{ departmentId: number; departmentName: string; position: string }>
+): string | null {
+  const prevMap = new Map(previousRoles.map((r) => [r.departmentId, r]));
+  const nextMap = new Map(updatedRoles.map((r) => [r.departmentId, r]));
+  const changes: string[] = [];
+
+  for (const r of updatedRoles) {
+    const prev = prevMap.get(r.departmentId);
+    if (!prev) {
+      changes.push(r.position ? `Added to ${r.departmentName} (${r.position})` : `Added to ${r.departmentName}`);
+    } else if ((prev.position || '') !== (r.position || '')) {
+      changes.push(
+        `Updated ${r.departmentName}: ${prev.position || 'Crew Member'} → ${r.position || 'Crew Member'}`
+      );
+    }
+  }
+
+  for (const prev of previousRoles) {
+    if (!nextMap.has(prev.departmentId)) {
+      changes.push(`Removed from ${prev.departmentName}`);
+    }
+  }
+
+  return changes.length > 0 ? changes.join('; ') : null;
+}
+
+function describeSkillChanges(
+  previousSkills: Array<{ skillId: number; skillName: string; level: string }>,
+  updatedSkills: Array<{ skillId: number; skillName: string; level: string }>
+): string | null {
+  const prevMap = new Map(previousSkills.map((s) => [s.skillId, s]));
+  const nextMap = new Map(updatedSkills.map((s) => [s.skillId, s]));
+  const changes: string[] = [];
+
+  for (const s of updatedSkills) {
+    const prev = prevMap.get(s.skillId);
+    if (!prev) {
+      changes.push(`Added skill ${s.skillName} (${s.level})`);
+    } else if (prev.level !== s.level) {
+      changes.push(`Updated skill ${s.skillName}: ${prev.level} → ${s.level}`);
+    }
+  }
+
+  for (const prev of previousSkills) {
+    if (!nextMap.has(prev.skillId)) {
+      changes.push(`Removed skill ${prev.skillName}`);
+    }
+  }
+
+  return changes.length > 0 ? changes.join('; ') : null;
+}
+
 /**
- * Fetch full profile details + crew roles for an active Crew member.
+ * Fetch full profile details, FR master data, lifecycle timeline, roles & skills
+ * for an active Crew member or stored master-data profile (On Leave / Alumni).
  */
 export async function GET(
   _request: Request,
@@ -56,39 +120,71 @@ export async function GET(
   }
 
   try {
-    const crewGroup = await getKeycloakGroupByName(CREW_GROUP_NAME);
-    if (!crewGroup) {
-      return NextResponse.json(
-        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
-        { status: 500 }
-      );
-    }
+    const [crewGroup, existingMaster, roles, skills, lifecycleEvents, departments, skillsCatalog] =
+      await Promise.all([
+        getKeycloakGroupByName(CREW_GROUP_NAME),
+        getCrewProfile(userId),
+        getCrewRolesForUser(userId),
+        getCrewSkillsForUser(userId),
+        listCrewLifecycleEvents(userId),
+        listDepartments(),
+        listSkills(),
+      ]);
 
-    const crewMembers = await getGroupMemberIds(crewGroup.id);
-    if (!crewMembers || !crewMembers.has(userId)) {
+    const crewMembers = crewGroup ? await getGroupMemberIds(crewGroup.id) : null;
+    const isCrew = Boolean(crewMembers && crewMembers.has(userId));
+
+    if (!isCrew && !existingMaster) {
       return NextResponse.json(
-        { error: 'Profile view is only available for active Crew members' },
+        { error: 'Profile view is only available for Crew members or offboarded records' },
         { status: 403 }
       );
     }
 
-    const [profile, roles, skills] = await Promise.all([
-      fetchKeycloakUser(userId),
-      getCrewRolesForUser(userId),
-      getCrewSkillsForUser(userId),
-    ]);
+    const kcProfile = await fetchKeycloakUser(userId);
+    let masterProfile = existingMaster;
+    if (kcProfile && existingMaster) {
+      masterProfile = (await refreshCrewProfileKeycloakSnapshot(kcProfile)) ?? existingMaster;
+    }
 
-    if (!profile) {
+    if (!kcProfile && !masterProfile) {
       return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
     }
 
+    const profile = kcProfile
+      ? {
+          ...kcProfile,
+          avatarUrl: getSafeAvatarUrl(kcProfile.avatarUrl) ?? undefined,
+        }
+      : {
+          id: masterProfile!.userId,
+          username: masterProfile!.username,
+          firstName: masterProfile!.firstName,
+          lastName: masterProfile!.lastName,
+          email: masterProfile!.email,
+          nickname: masterProfile!.nickname || masterProfile!.username,
+          telegram: masterProfile!.telegram,
+          species: masterProfile!.species,
+          pronouns: masterProfile!.pronouns,
+          phone: masterProfile!.phone,
+          street: '',
+          zip: '',
+          city: '',
+          country: '',
+          dob: '',
+          avatarUrl: masterProfile!.avatarUrl,
+        };
+
     return NextResponse.json({
-      profile: {
-        ...profile,
-        avatarUrl: getSafeAvatarUrl(profile.avatarUrl) ?? undefined,
-      },
+      isCrew,
+      isFrAdmin: authResult.roles.includes('furry_ressources_admin'),
+      profile,
+      crewProfile: masterProfile,
+      lifecycleEvents,
       roles,
       skills,
+      departments,
+      skillsCatalog,
     });
   } catch (err) {
     console.error('[API] GET /api/fr/crew/[userId] failed:', (err as Error).message);
@@ -97,7 +193,8 @@ export async function GET(
 }
 
 /**
- * Promote a Keycloak user to Crew by adding them to `wtf-crew`.
+ * Promote a Keycloak user to Crew by adding them to `wtf-crew`
+ * and creating/reactivating their central `crew_profiles` master record.
  */
 export async function POST(
   _request: Request,
@@ -132,6 +229,28 @@ export async function POST(
 
     const targetProfile = await fetchKeycloakUser(userId);
     const targetLabel = targetProfile?.username || userId;
+
+    const { isRejoin } = await upsertCrewProfileOnPromote(
+      targetProfile ?? {
+        id: userId,
+        username: userId,
+        firstName: '',
+        lastName: '',
+        email: '',
+        nickname: userId,
+        telegram: '',
+        species: '',
+        pronouns: '',
+        phone: '',
+        street: '',
+        zip: '',
+        city: '',
+        country: '',
+        dob: '',
+      },
+      { userId: authResult.userId, username: authResult.username }
+    );
+
     await recordAuditLog({
       category: 'fr',
       action: 'crew.promote',
@@ -140,14 +259,16 @@ export async function POST(
       targetType: 'user',
       targetId: userId,
       targetLabel,
-      summary: `Promoted "${targetLabel}" to Crew (wtf-crew)`,
-      metadata: { groupName: CREW_GROUP_NAME },
+      summary: isRejoin
+        ? `Re-onboarded "${targetLabel}" to Crew (wtf-crew)`
+        : `Onboarded "${targetLabel}" to Crew (wtf-crew)`,
+      metadata: { groupName: CREW_GROUP_NAME, isRejoin },
     });
 
-    return NextResponse.json({ ok: true, isCrew: true });
+    return NextResponse.json({ ok: true, isCrew: true, isRejoin });
   } catch (err) {
     console.error('[API] POST /api/fr/crew/[userId] failed:', (err as Error).message);
-    return NextResponse.json({ error: 'Failed to promote user' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to onboard user' }, { status: 500 });
   }
 }
 
@@ -187,7 +308,7 @@ export async function PUT(
     const crewMembers = await getGroupMemberIds(crewGroup.id);
     if (!crewMembers || !crewMembers.has(userId)) {
       return NextResponse.json(
-        { error: 'User must be promoted to Crew before assigning departments' },
+        { error: 'User must be onboarded to Crew before assigning departments' },
         { status: 400 }
       );
     }
@@ -245,12 +366,39 @@ export async function PUT(
       }
     }
 
+    const previousRoles = await getCrewRolesForUser(userId);
     await replaceUserCrewAssignments(userId, assignments);
-    const [updatedRoles, targetProfile] = await Promise.all([
+    const [updatedRoles, targetProfile, existingMaster] = await Promise.all([
       getCrewRolesForUser(userId),
       fetchKeycloakUser(userId),
+      getCrewProfile(userId),
     ]);
     const targetLabel = targetProfile?.username || userId;
+
+    if (existingMaster) {
+      const roleSummary = describeRoleChanges(previousRoles, updatedRoles);
+      if (roleSummary) {
+        await addCrewLifecycleEvent({
+          userId,
+          eventType: 'roles_updated',
+          actorUserId: authResult.userId,
+          actorUsername: authResult.username,
+          note: roleSummary,
+          metadata: {
+            previous: previousRoles.map((r) => ({
+              departmentId: r.departmentId,
+              departmentName: r.departmentName,
+              position: r.position,
+            })),
+            roles: updatedRoles.map((r) => ({
+              departmentId: r.departmentId,
+              departmentName: r.departmentName,
+              position: r.position,
+            })),
+          },
+        });
+      }
+    }
 
     await recordAuditLog({
       category: 'fr',
@@ -312,7 +460,7 @@ export async function PATCH(
     const crewMembers = await getGroupMemberIds(crewGroup.id);
     if (!crewMembers || !crewMembers.has(userId)) {
       return NextResponse.json(
-        { error: 'User must be promoted to Crew before assigning skills' },
+        { error: 'User must be onboarded to Crew before assigning skills' },
         { status: 400 }
       );
     }
@@ -337,11 +485,25 @@ export async function PATCH(
 
     const previousSkills = await getCrewSkillsForUser(userId);
     await replaceUserCrewSkills(userId, skillsPayload, authResult.userId);
-    const [updatedSkills, targetProfile] = await Promise.all([
+    const [updatedSkills, targetProfile, existingMaster] = await Promise.all([
       getCrewSkillsForUser(userId),
       fetchKeycloakUser(userId),
+      getCrewProfile(userId),
     ]);
     const targetLabel = targetProfile?.username || userId;
+
+    if (existingMaster) {
+      const skillSummary = describeSkillChanges(previousSkills, updatedSkills);
+      if (skillSummary) {
+        await addCrewLifecycleEvent({
+          userId,
+          eventType: 'skills_updated',
+          actorUserId: authResult.userId,
+          actorUsername: authResult.username,
+          note: skillSummary,
+        });
+      }
+    }
 
     await recordAuditLog({
       category: 'fr',
@@ -374,11 +536,11 @@ export async function PATCH(
 }
 
 /**
- * Demote a crew member: removes `wtf-crew`, removes all mapped department Keycloak groups,
- * and deletes all department & skill assignments in MySQL.
+ * Demote / Offboard a crew member: removes `wtf-crew` and mapped department Keycloak groups,
+ * deletes active department & skill assignments, and marks `crew_profiles` as `offboarded` (Alumni).
  */
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
   const authResult = await requireSessionRole('furry_ressources_admin');
@@ -390,11 +552,18 @@ export async function DELETE(
   if (!isValidUserId(userId)) {
     return NextResponse.json({ error: 'Invalid user ID' }, { status: 400 });
   }
+  if (userId === authResult.userId) {
+    return NextResponse.json({ error: 'Cannot offboard your own account' }, { status: 400 });
+  }
 
   try {
-    const [crewGroup, mappedGroupIds] = await Promise.all([
+    const rawBody = await request.json().catch(() => null);
+    const { reason } = sanitizeOffboardPayload(rawBody);
+
+    const [crewGroup, mappedGroupIds, previousRoles] = await Promise.all([
       getKeycloakGroupByName(CREW_GROUP_NAME),
       getMappedGroupIdsForUser(userId),
+      getCrewRolesForUser(userId),
     ]);
 
     if (!crewGroup) {
@@ -428,6 +597,19 @@ export async function DELETE(
     await Promise.all([
       deleteAllUserCrewAssignments(userId),
       deleteAllUserCrewSkills(userId),
+      markCrewProfileOffboarded(userId, {
+        reason,
+        actorUserId: authResult.userId,
+        actorUsername: authResult.username,
+        metadata: {
+          removedMappedGroupCount: mappedGroupIds.length,
+          previousRoles: previousRoles.map((r) => ({
+            departmentName: r.departmentName,
+            position: r.position,
+          })),
+        },
+        fallbackProfile: targetProfile,
+      }),
     ]);
 
     await recordAuditLog({
@@ -438,13 +620,16 @@ export async function DELETE(
       targetType: 'user',
       targetId: userId,
       targetLabel,
-      summary: `Demoted "${targetLabel}" from Crew (removed wtf-crew & all assignments)`,
-      metadata: { removedMappedGroupCount: mappedGroupIds.length },
+      summary: `Offboarded "${targetLabel}" from Crew (removed wtf-crew & assignments)`,
+      metadata: {
+        removedMappedGroupCount: mappedGroupIds.length,
+        reason,
+      },
     });
 
-    return NextResponse.json({ ok: true, isCrew: false, roles: [] });
+    return NextResponse.json({ ok: true, isCrew: false, status: 'offboarded', roles: [] });
   } catch (err) {
     console.error('[API] DELETE /api/fr/crew/[userId] failed:', (err as Error).message);
-    return NextResponse.json({ error: 'Failed to demote user' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to offboard user' }, { status: 500 });
   }
 }

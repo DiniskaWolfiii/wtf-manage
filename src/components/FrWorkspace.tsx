@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Group, Paper, Stack, Text } from '@mantine/core';
 import { IconAlertCircle, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
+import { FrCrewDetailView } from '@/components/fr/FrCrewDetailView';
 import { FrCrewSection } from '@/components/fr/FrCrewSection';
 import { FrDepartmentsSection } from '@/components/fr/FrDepartmentsSection';
 import { FrSkillsSection } from '@/components/fr/FrSkillsSection';
@@ -17,7 +18,7 @@ import type {
 const SECTION_META: Record<FrSection, { title: string; subtitle: string }> = {
   crew: {
     title: 'Crew Management',
-    subtitle: 'Promote crew members, inspect profiles, and assign departments & skills',
+    subtitle: 'Onboard crew members, inspect profiles, and assign departments & skills',
   },
   departments: {
     title: 'Departments',
@@ -33,10 +34,12 @@ export function FrWorkspace({
   currentUserId,
   isFrAdmin = false,
   section = 'crew',
+  detailUserId,
 }: {
   currentUserId?: string;
   isFrAdmin?: boolean;
   section?: FrSection;
+  detailUserId?: string;
 }) {
   const [loading, setLoading] = useState(true);
   const [crewGroupConfigured, setCrewGroupConfigured] = useState(true);
@@ -46,6 +49,10 @@ export function FrWorkspace({
   const [statusMessage, setStatusMessage] = useState<FrStatusMessage | null>(null);
 
   const loadData = useCallback(async () => {
+    if (detailUserId) {
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch('/api/fr/crew', { cache: 'no-store' });
       const data = await res.json();
@@ -68,9 +75,10 @@ export function FrWorkspace({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [detailUserId]);
 
   useEffect(() => {
+    if (detailUserId) return;
     let cancelled = false;
     fetch('/api/fr/crew', { cache: 'no-store' })
       .then(async (res) => {
@@ -104,7 +112,17 @@ export function FrWorkspace({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [detailUserId]);
+
+  if (section === 'crew' && detailUserId) {
+    return (
+      <FrCrewDetailView
+        userId={detailUserId}
+        isFrAdmin={isFrAdmin}
+        currentUserId={currentUserId}
+      />
+    );
+  }
 
   const meta = SECTION_META[section];
 
@@ -207,7 +225,15 @@ export function FrWorkspace({
         </Paper>
       )}
 
-      {section === 'crew' && (
+      {section === 'crew' && detailUserId && (
+        <FrCrewDetailView
+          userId={detailUserId}
+          isFrAdmin={isFrAdmin}
+          currentUserId={currentUserId}
+        />
+      )}
+
+      {section === 'crew' && !detailUserId && (
         <FrCrewSection
           loading={loading}
           crewGroupConfigured={crewGroupConfigured}

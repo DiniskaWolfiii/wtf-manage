@@ -380,3 +380,121 @@ export function sanitizeCrewSkillsPayload(
 
   return clean;
 }
+
+const VALID_CREW_STATUSES = new Set(['active', 'on_leave', 'offboarded']);
+const MAX_REASON_LENGTH = 255;
+const MAX_INTERNAL_NOTES_LENGTH = 4000;
+
+function parseOptionalDateString(val: unknown): string | null | undefined {
+  if (val === undefined) return undefined;
+  if (val === null || val === '') return null;
+  if (typeof val !== 'string') return undefined;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
+/**
+ * Validate a crew master-data update payload for FR.
+ */
+export function sanitizeCrewMasterDataPayload(body: unknown): {
+  status?: 'active' | 'on_leave' | 'offboarded';
+  joinedAt?: string | null;
+  offboardedAt?: string | null;
+  offboardReason?: string | null;
+  internalNotes?: string;
+  effectiveAt?: string | null;
+  eventNote?: string | null;
+} | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return null;
+  }
+  const input = body as Record<string, unknown>;
+  const out: {
+    status?: 'active' | 'on_leave' | 'offboarded';
+    joinedAt?: string | null;
+    offboardedAt?: string | null;
+    offboardReason?: string | null;
+    internalNotes?: string;
+    effectiveAt?: string | null;
+    eventNote?: string | null;
+  } = {};
+
+  if (input.status !== undefined) {
+    if (typeof input.status !== 'string' || !VALID_CREW_STATUSES.has(input.status)) {
+      return null;
+    }
+    out.status = input.status as 'active' | 'on_leave' | 'offboarded';
+  }
+
+  if (input.joinedAt !== undefined) {
+    const d = parseOptionalDateString(input.joinedAt);
+    if (d === undefined) return null;
+    out.joinedAt = d;
+  }
+
+  if (input.offboardedAt !== undefined) {
+    const d = parseOptionalDateString(input.offboardedAt);
+    if (d === undefined) return null;
+    out.offboardedAt = d;
+  }
+
+  if (input.effectiveAt !== undefined) {
+    const d = parseOptionalDateString(input.effectiveAt);
+    if (d === undefined) return null;
+    out.effectiveAt = d;
+  }
+
+  if (input.offboardReason !== undefined) {
+    if (input.offboardReason === null) {
+      out.offboardReason = null;
+    } else if (typeof input.offboardReason === 'string') {
+      const t = input.offboardReason.trim();
+      if (t.length > MAX_REASON_LENGTH) return null;
+      out.offboardReason = t || null;
+    } else {
+      return null;
+    }
+  }
+
+  if (input.eventNote !== undefined) {
+    if (input.eventNote === null) {
+      out.eventNote = null;
+    } else if (typeof input.eventNote === 'string') {
+      const t = input.eventNote.trim();
+      if (t.length > MAX_REASON_LENGTH) return null;
+      out.eventNote = t || null;
+    } else {
+      return null;
+    }
+  }
+
+  if (input.internalNotes !== undefined) {
+    if (typeof input.internalNotes !== 'string') return null;
+    if (input.internalNotes.length > MAX_INTERNAL_NOTES_LENGTH) return null;
+    out.internalNotes = input.internalNotes.trim();
+  }
+
+  if (Object.keys(out).length === 0) {
+    return null;
+  }
+
+  return out;
+}
+
+/**
+ * Validate optional `{ reason }` body on DELETE /api/fr/crew/[userId].
+ */
+export function sanitizeOffboardPayload(body: unknown): { reason: string | null } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { reason: null };
+  }
+  const raw = (body as Record<string, unknown>).reason;
+  if (typeof raw !== 'string') {
+    return { reason: null };
+  }
+  const trimmed = raw.trim().slice(0, MAX_REASON_LENGTH);
+  return { reason: trimmed || null };
+}

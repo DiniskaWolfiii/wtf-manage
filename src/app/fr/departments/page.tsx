@@ -11,7 +11,10 @@ export default async function FrDepartmentsPage() {
     redirect('/login?callbackUrl=/fr/departments');
   }
 
-  if (!user.permissions.includes('fr.read') && !user.permissions.includes('fr.write')) {
+  if (
+    !user.permissions.includes('fr.departments.view') &&
+    !user.permissions.includes('fr.departments.manage')
+  ) {
     redirect('/profile');
   }
 

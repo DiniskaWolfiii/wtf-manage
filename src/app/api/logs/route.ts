@@ -4,21 +4,21 @@ import { requireSessionPermission } from '@/lib/server-auth';
 
 export async function GET(request: Request) {
   const authResult = await requireSessionPermission([
-    'logs.view_fr',
-    'logs.view_admin',
-    'logs.view_all',
+    'logs.fr.view',
+    'logs.admin.view',
+    'logs.all.view',
   ]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
   const { permissions } = authResult;
-  const canViewAll = permissions.includes('logs.view_all');
+  const canViewAll = permissions.includes('logs.all.view');
   const allowedCategories: AuditCategory[] | undefined = canViewAll
     ? undefined
     : [
-        ...(permissions.includes('logs.view_fr') ? (['fr'] as const) : []),
-        ...(permissions.includes('logs.view_admin') ? (['admin'] as const) : []),
+        ...(permissions.includes('logs.fr.view') ? (['fr'] as const) : []),
+        ...(permissions.includes('logs.admin.view') ? (['admin'] as const) : []),
       ];
 
   try {

@@ -11,26 +11,34 @@ import {
   getKeycloakGroupByName,
   listKeycloakUsersMinimal,
 } from '@/lib/keycloak';
+import { getCrewOnboardingGroup } from '@/lib/permissions';
 import { requireSessionPermission } from '@/lib/server-auth';
 import { listAllCrewSkills, listSkills } from '@/lib/skills';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
-const CREW_GROUP_NAME = 'wtf-crew';
-const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
+const FR_ANY_READ_PERMS = [
+  'fr.crew.view',
+  'fr.crew.manage',
+  'fr.departments.view',
+  'fr.departments.manage',
+  'fr.skills.view',
+  'fr.skills.manage',
+] as const;
 
 export async function GET() {
-  const authResult = await requireSessionPermission([...FR_READ_PERMS]);
+  const authResult = await requireSessionPermission([...FR_ANY_READ_PERMS]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
-  const isFrAdmin = authResult.permissions.includes('fr.write');
+  const isFrAdmin = authResult.permissions.includes('fr.crew.manage');
 
   try {
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
     const [kcUsers, crewGroup, departments, assignments, skillsCatalog, crewSkills, profileMap] =
       await Promise.all([
         listKeycloakUsersMinimal(),
-        getKeycloakGroupByName(CREW_GROUP_NAME),
+        crewGroupIdentifier ? getKeycloakGroupByName(crewGroupIdentifier) : Promise.resolve(null),
         listDepartments(),
         listAllCrewAssignments(),
         listSkills(),
@@ -144,15 +152,23 @@ export async function GET() {
  * Sync / backfill all active `wtf-crew` members from Keycloak into `crew_profiles`.
  */
 export async function POST() {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.crew.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
   try {
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    if (!crewGroupIdentifier) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group is not configured in Admin → Permissions.' },
+        { status: 400 }
+      );
+    }
+
     const [kcUsers, crewGroup] = await Promise.all([
       listKeycloakUsersMinimal(),
-      getKeycloakGroupByName(CREW_GROUP_NAME),
+      getKeycloakGroupByName(crewGroupIdentifier),
     ]);
 
     if (!kcUsers) {
@@ -163,7 +179,7 @@ export async function POST() {
     }
     if (!crewGroup) {
       return NextResponse.json(
-        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
+        { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
         { status: 500 }
       );
     }
@@ -181,7 +197,7 @@ export async function POST() {
       actorUsername: authResult.username,
       targetType: 'user',
       targetId: null,
-      targetLabel: CREW_GROUP_NAME,
+      targetLabel: crewGroupIdentifier,
       summary: `Synced crew master profiles from Keycloak (${result.created} created, ${result.updated} updated)`,
       metadata: result,
     });

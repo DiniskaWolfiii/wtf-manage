@@ -24,7 +24,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.crew.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

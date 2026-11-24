@@ -37,12 +37,14 @@ export function FrSkillsSection({
   loading,
   skillsCatalog,
   users,
+  canWrite = false,
   onRefresh,
   onStatusMessage,
 }: {
   loading: boolean;
   skillsCatalog: SkillCatalogItem[];
   users: FrUserItem[];
+  canWrite?: boolean;
   onRefresh: () => Promise<void>;
   onStatusMessage: (msg: FrStatusMessage | null) => void;
 }) {
@@ -244,65 +246,69 @@ export function FrSkillsSection({
               </Text>
             </div>
 
-            <form onSubmit={handleCreateSkill}>
-              <Stack gap="sm">
-                <Group gap="sm" align="flex-end" wrap="wrap">
-                  <TextInput
-                    label="Skill Name"
-                    placeholder="e.g. First Aid, German, Radio Ops"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    maxLength={80}
-                    style={{ flex: 1, minWidth: 200 }}
-                  />
-                  <TextInput
-                    label="Category"
-                    placeholder="e.g. Medical, Language, Ops"
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    maxLength={60}
-                    style={{ flex: 1, minWidth: 160 }}
-                  />
-                </Group>
+            {canWrite && (
+              <>
+                <form onSubmit={handleCreateSkill}>
+                  <Stack gap="sm">
+                    <Group gap="sm" align="flex-end" wrap="wrap">
+                      <TextInput
+                        label="Skill Name"
+                        placeholder="e.g. First Aid, German, Radio Ops"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        maxLength={80}
+                        style={{ flex: 1, minWidth: 200 }}
+                      />
+                      <TextInput
+                        label="Category"
+                        placeholder="e.g. Medical, Language, Ops"
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        maxLength={60}
+                        style={{ flex: 1, minWidth: 160 }}
+                      />
+                    </Group>
 
-                <TagsInput
-                  label="Allowed Levels (press Enter to add)"
-                  placeholder="Add level..."
-                  value={newLevels}
-                  onChange={setNewLevels}
-                  clearable
-                />
+                    <TagsInput
+                      label="Allowed Levels (press Enter to add)"
+                      placeholder="Add level..."
+                      value={newLevels}
+                      onChange={setNewLevels}
+                      clearable
+                    />
 
-                <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                  <Group gap="xs" wrap="wrap">
-                    <Text size="xs" c="dimmed">
-                      Presets:
-                    </Text>
-                    {LEVEL_PRESETS.map((preset) => (
+                    <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                      <Group gap="xs" wrap="wrap">
+                        <Text size="xs" c="dimmed">
+                          Presets:
+                        </Text>
+                        {LEVEL_PRESETS.map((preset) => (
+                          <Button
+                            key={preset.label}
+                            size="compact-xs"
+                            variant="default"
+                            onClick={() => setNewLevels(preset.levels)}
+                          >
+                            {preset.label}
+                          </Button>
+                        ))}
+                      </Group>
                       <Button
-                        key={preset.label}
-                        size="compact-xs"
-                        variant="default"
-                        onClick={() => setNewLevels(preset.levels)}
+                        type="submit"
+                        color="cyan"
+                        leftSection={<IconPlus size={14} />}
+                        loading={creating}
+                        disabled={!newName.trim() || newLevels.length === 0}
                       >
-                        {preset.label}
+                        Create Skill
                       </Button>
-                    ))}
-                  </Group>
-                  <Button
-                    type="submit"
-                    color="cyan"
-                    leftSection={<IconPlus size={14} />}
-                    loading={creating}
-                    disabled={!newName.trim() || newLevels.length === 0}
-                  >
-                    Create Skill
-                  </Button>
-                </Group>
-              </Stack>
-            </form>
+                    </Group>
+                  </Stack>
+                </form>
 
-            <Divider color="var(--mantine-color-dark-4)" />
+                <Divider color="var(--mantine-color-dark-4)" />
+              </>
+            )}
 
             {loading ? (
               <Group justify="center" gap="sm" py="md">
@@ -346,33 +352,35 @@ export function FrSkillsSection({
                           ))}
                         </Group>
                       </div>
-                      <Group gap={4} wrap="nowrap">
-                        <ActionIcon
-                          variant="subtle"
-                          color="gray"
-                          size="sm"
-                          title="Edit skill"
-                          aria-label="Edit skill"
-                          onClick={() => {
-                            setEditTarget(skill);
-                            setEditName(skill.name);
-                            setEditCategory(skill.category);
-                            setEditLevels(skill.levels);
-                          }}
-                        >
-                          <IconEdit size={14} />
-                        </ActionIcon>
-                        <ActionIcon
-                          variant="subtle"
-                          color="red"
-                          size="sm"
-                          title="Delete skill"
-                          aria-label="Delete skill"
-                          onClick={() => setDeleteTarget(skill)}
-                        >
-                          <IconTrash size={14} />
-                        </ActionIcon>
-                      </Group>
+                      {canWrite && (
+                        <Group gap={4} wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            color="gray"
+                            size="sm"
+                            title="Edit skill"
+                            aria-label="Edit skill"
+                            onClick={() => {
+                              setEditTarget(skill);
+                              setEditName(skill.name);
+                              setEditCategory(skill.category);
+                              setEditLevels(skill.levels);
+                            }}
+                          >
+                            <IconEdit size={14} />
+                          </ActionIcon>
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            size="sm"
+                            title="Delete skill"
+                            aria-label="Delete skill"
+                            onClick={() => setDeleteTarget(skill)}
+                          >
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        </Group>
+                      )}
                     </Group>
                   </Paper>
                 ))}

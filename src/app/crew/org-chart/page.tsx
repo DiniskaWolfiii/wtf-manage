@@ -11,7 +11,7 @@ export default async function CrewOrgChartPage() {
     redirect('/login?callbackUrl=/crew/org-chart');
   }
 
-  if (!user.permissions.includes('crew.view')) {
+  if (!user.permissions.includes('crew.dashboard.view')) {
     redirect('/profile');
   }
 

@@ -22,6 +22,7 @@ import {
   getKeycloakGroupByName,
   removeUserFromGroup,
 } from '@/lib/keycloak';
+import { getCrewOnboardingGroup } from '@/lib/permissions';
 import { requireSessionPermission } from '@/lib/server-auth';
 import {
   deleteAllUserCrewSkills,
@@ -36,8 +37,7 @@ import {
   sanitizeOffboardPayload,
 } from '@/lib/validation';
 
-const CREW_GROUP_NAME = 'wtf-crew';
-const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
+const FR_READ_PERMS = ['fr.crew.view', 'fr.crew.manage'] as const;
 
 function isValidUserId(userId: string): boolean {
   return (
@@ -120,9 +120,10 @@ export async function GET(
   }
 
   try {
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
     const [crewGroup, existingMaster, roles, skills, lifecycleEvents, departments, skillsCatalog] =
       await Promise.all([
-        getKeycloakGroupByName(CREW_GROUP_NAME),
+        crewGroupIdentifier ? getKeycloakGroupByName(crewGroupIdentifier) : Promise.resolve(null),
         getCrewProfile(userId),
         getCrewRolesForUser(userId),
         getCrewSkillsForUser(userId),
@@ -177,7 +178,7 @@ export async function GET(
 
     return NextResponse.json({
       isCrew,
-      isFrAdmin: authResult.permissions.includes('fr.write'),
+      isFrAdmin: authResult.permissions.includes('fr.crew.manage'),
       profile,
       crewProfile: masterProfile,
       lifecycleEvents,
@@ -200,7 +201,7 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.crew.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -211,10 +212,18 @@ export async function POST(
   }
 
   try {
-    const crewGroup = await getKeycloakGroupByName(CREW_GROUP_NAME);
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    if (!crewGroupIdentifier) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group is not configured in Admin → Permissions.' },
+        { status: 400 }
+      );
+    }
+
+    const crewGroup = await getKeycloakGroupByName(crewGroupIdentifier);
     if (!crewGroup) {
       return NextResponse.json(
-        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
+        { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
         { status: 500 }
       );
     }
@@ -262,7 +271,7 @@ export async function POST(
       summary: isRejoin
         ? `Re-onboarded "${targetLabel}" to Crew (wtf-crew)`
         : `Onboarded "${targetLabel}" to Crew (wtf-crew)`,
-      metadata: { groupName: CREW_GROUP_NAME, isRejoin },
+      metadata: { groupName: crewGroupIdentifier, isRejoin },
     });
 
     return NextResponse.json({ ok: true, isCrew: true, isRejoin });
@@ -280,7 +289,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.crew.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -297,10 +306,18 @@ export async function PUT(
       return NextResponse.json({ error: 'Invalid assignments payload' }, { status: 400 });
     }
 
-    const crewGroup = await getKeycloakGroupByName(CREW_GROUP_NAME);
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    if (!crewGroupIdentifier) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group is not configured in Admin → Permissions.' },
+        { status: 400 }
+      );
+    }
+
+    const crewGroup = await getKeycloakGroupByName(crewGroupIdentifier);
     if (!crewGroup) {
       return NextResponse.json(
-        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
+        { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
         { status: 500 }
       );
     }
@@ -432,7 +449,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.crew.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -449,10 +466,18 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid skills payload' }, { status: 400 });
     }
 
-    const crewGroup = await getKeycloakGroupByName(CREW_GROUP_NAME);
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    if (!crewGroupIdentifier) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group is not configured in Admin → Permissions.' },
+        { status: 400 }
+      );
+    }
+
+    const crewGroup = await getKeycloakGroupByName(crewGroupIdentifier);
     if (!crewGroup) {
       return NextResponse.json(
-        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
+        { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
         { status: 500 }
       );
     }
@@ -543,7 +568,7 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.crew.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -560,15 +585,23 @@ export async function DELETE(
     const rawBody = await request.json().catch(() => null);
     const { reason } = sanitizeOffboardPayload(rawBody);
 
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    if (!crewGroupIdentifier) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group is not configured in Admin → Permissions.' },
+        { status: 400 }
+      );
+    }
+
     const [crewGroup, mappedGroupIds, previousRoles] = await Promise.all([
-      getKeycloakGroupByName(CREW_GROUP_NAME),
+      getKeycloakGroupByName(crewGroupIdentifier),
       getMappedGroupIdsForUser(userId),
       getCrewRolesForUser(userId),
     ]);
 
     if (!crewGroup) {
       return NextResponse.json(
-        { error: `Keycloak group "${CREW_GROUP_NAME}" was not found` },
+        { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
         { status: 500 }
       );
     }

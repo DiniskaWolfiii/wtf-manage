@@ -17,7 +17,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionPermission('admin.manage');
+  const authResult = await requireSessionPermission('admin.portal.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

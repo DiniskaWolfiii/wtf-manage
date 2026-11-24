@@ -12,7 +12,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.departments.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

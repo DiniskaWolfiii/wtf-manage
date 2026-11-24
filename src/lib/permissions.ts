@@ -4,6 +4,7 @@ import { ensureSettingsTable } from '@/lib/settings';
 import {
   ALL_PERMISSIONS,
   DEFAULT_PERMISSION_MAPPINGS,
+  LEGACY_PERMISSION_MIGRATION,
   isValidPermission,
   normalizeGroupIdentifier,
   type PermissionMappings,
@@ -11,6 +12,7 @@ import {
 } from '@/lib/permission-types';
 
 const PERMISSION_SETTING_KEY = 'permissionMappings';
+const CREW_GROUP_SETTING_KEY = 'crewGroup';
 const CACHE_TTL_MS = 30 * 1000;
 
 interface SettingRow extends RowDataPacket {
@@ -22,50 +24,82 @@ const globalForPermissions = globalThis as unknown as {
     value: PermissionMappings;
     expiresAt: number;
   };
+  crewGroupCache?: {
+    value: string | null;
+    expiresAt: number;
+  };
+  warnedMissingAdminGroup?: boolean;
 };
 
 /**
  * Returns the configured super-admin Keycloak group identifier from `ADMIN_GROUP`.
- * Falls back to `winterfur-admin` when unset.
+ * Returns `null` (fail-closed) when unset, without any hardcoded group fallback.
  */
-export function getConfiguredAdminGroup(): string {
+export function getConfiguredAdminGroup(): string | null {
   const raw = process.env.ADMIN_GROUP?.trim();
-  return raw && raw.length > 0 ? normalizeGroupIdentifier(raw) : 'winterfur-admin';
+  if (!raw) {
+    if (!globalForPermissions.warnedMissingAdminGroup) {
+      globalForPermissions.warnedMissingAdminGroup = true;
+      console.warn('[Auth] ADMIN_GROUP is not configured; super-admin group fallback is disabled.');
+    }
+    return null;
+  }
+  const normalized = normalizeGroupIdentifier(raw);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function createEmptyMappings(): PermissionMappings {
+  return {
+    'crew.dashboard.view': [],
+    'fr.crew.view': [],
+    'fr.crew.manage': [],
+    'fr.departments.view': [],
+    'fr.departments.manage': [],
+    'fr.skills.view': [],
+    'fr.skills.manage': [],
+    'logs.fr.view': [],
+    'logs.admin.view': [],
+    'logs.all.view': [],
+    'admin.portal.manage': [],
+  };
+}
+
+function sanitizeGroupList(list: unknown): string[] {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      list
+        .filter((item): item is string => typeof item === 'string')
+        .map(normalizeGroupIdentifier)
+        .filter((item) => item.length > 0 && item.length <= 255)
+    )
+  );
 }
 
 function sanitizeMappings(raw: unknown): PermissionMappings {
-  const result: PermissionMappings = {
-    'crew.view': [...DEFAULT_PERMISSION_MAPPINGS['crew.view']],
-    'fr.read': [...DEFAULT_PERMISSION_MAPPINGS['fr.read']],
-    'fr.write': [...DEFAULT_PERMISSION_MAPPINGS['fr.write']],
-    'logs.view_fr': [...DEFAULT_PERMISSION_MAPPINGS['logs.view_fr']],
-    'logs.view_admin': [...DEFAULT_PERMISSION_MAPPINGS['logs.view_admin']],
-    'logs.view_all': [...DEFAULT_PERMISSION_MAPPINGS['logs.view_all']],
-    'admin.manage': [...DEFAULT_PERMISSION_MAPPINGS['admin.manage']],
-  };
+  const result = createEmptyMappings();
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return result;
   }
 
   const obj = raw as Record<string, unknown>;
+
+  // First migrate any legacy permission keys if the new key is not explicitly present yet
+  for (const [legacyKey, targetKey] of Object.entries(LEGACY_PERMISSION_MIGRATION)) {
+    if (Object.hasOwn(obj, legacyKey) && !Object.hasOwn(obj, targetKey)) {
+      result[targetKey] = sanitizeGroupList(obj[legacyKey]);
+    }
+  }
+
+  // Apply current schema keys
   for (const key of ALL_PERMISSIONS) {
     if (!Object.hasOwn(obj, key)) {
       continue;
     }
-    const list = obj[key];
-    if (!Array.isArray(list)) {
-      continue;
-    }
-    const cleaned = Array.from(
-      new Set(
-        list
-          .filter((item): item is string => typeof item === 'string')
-          .map(normalizeGroupIdentifier)
-          .filter((item) => item.length > 0 && item.length <= 255)
-      )
-    );
-    result[key] = cleaned;
+    result[key] = sanitizeGroupList(obj[key]);
   }
 
   return result;
@@ -76,22 +110,23 @@ function parseSettingJson(raw: unknown): unknown {
     try {
       return JSON.parse(raw);
     } catch {
-      return null;
+      return raw;
     }
   }
   return raw;
 }
 
 /**
- * Invalidates the in-memory permission mappings cache immediately.
+ * Invalidates the in-memory permission mappings and crew group caches immediately.
  */
 export function invalidatePermissionMappingsCache(): void {
   globalForPermissions.permissionMappingsCache = undefined;
+  globalForPermissions.crewGroupCache = undefined;
 }
 
 /**
  * Loads permission-to-group mappings from MySQL (with 30s in-memory cache).
- * Seeds default mappings on first access and falls back to defaults on DB errors.
+ * Automatically migrates legacy keys and falls back to empty mappings on DB errors.
  */
 export async function getPermissionMappings(): Promise<PermissionMappings> {
   const now = Date.now();
@@ -125,7 +160,7 @@ export async function getPermissionMappings(): Promise<PermissionMappings> {
     return mappings;
   } catch (err) {
     console.error('[DB] Failed to load permission mappings:', (err as Error).message);
-    return sanitizeMappings(DEFAULT_PERMISSION_MAPPINGS);
+    return createEmptyMappings();
   }
 }
 
@@ -142,14 +177,7 @@ export async function updatePermissionMappings(
     if (!isValidPermission(key) || !Array.isArray(value)) {
       continue;
     }
-    next[key] = Array.from(
-      new Set(
-        value
-          .filter((item): item is string => typeof item === 'string')
-          .map(normalizeGroupIdentifier)
-          .filter((item) => item.length > 0 && item.length <= 255)
-      )
-    );
+    next[key] = sanitizeGroupList(value);
   }
 
   await ensureSettingsTable();
@@ -163,6 +191,66 @@ export async function updatePermissionMappings(
 
   invalidatePermissionMappingsCache();
   return getPermissionMappings();
+}
+
+/**
+ * Loads the configured Keycloak group used for crew onboarding/offboarding.
+ * Returns `null` if not configured yet.
+ */
+export async function getCrewOnboardingGroup(): Promise<string | null> {
+  const now = Date.now();
+  const cached = globalForPermissions.crewGroupCache;
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  try {
+    await ensureSettingsTable();
+    const pool = getPool();
+    const [rows] = await pool.query<SettingRow[]>(
+      'SELECT setting_value FROM portal_settings WHERE setting_key = ? LIMIT 1',
+      [CREW_GROUP_SETTING_KEY]
+    );
+
+    let group: string | null = null;
+    if (rows.length > 0) {
+      const parsed = parseSettingJson(rows[0].setting_value);
+      if (typeof parsed === 'string') {
+        const normalized = normalizeGroupIdentifier(parsed);
+        group = normalized.length > 0 ? normalized : null;
+      }
+    }
+
+    globalForPermissions.crewGroupCache = {
+      value: group,
+      expiresAt: now + CACHE_TTL_MS,
+    };
+
+    return group;
+  } catch (err) {
+    console.error('[DB] Failed to load crew onboarding group:', (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Persists the Keycloak group used for crew onboarding/offboarding and invalidates cache.
+ */
+export async function updateCrewOnboardingGroup(group: string | null): Promise<string | null> {
+  const normalized = group ? normalizeGroupIdentifier(group) : '';
+  const value = normalized.length > 0 && normalized.length <= 255 ? normalized : null;
+
+  await ensureSettingsTable();
+  const pool = getPool();
+  await pool.execute(
+    `INSERT INTO portal_settings (setting_key, setting_value)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+    [CREW_GROUP_SETTING_KEY, JSON.stringify(value)]
+  );
+
+  invalidatePermissionMappingsCache();
+  return getCrewOnboardingGroup();
 }
 
 /**

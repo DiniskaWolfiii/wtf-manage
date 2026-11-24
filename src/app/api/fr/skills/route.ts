@@ -8,10 +8,10 @@ import {
   sanitizeSkillName,
 } from '@/lib/validation';
 
-const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
+const SKILL_READ_PERMS = ['fr.skills.view', 'fr.skills.manage'] as const;
 
 export async function GET() {
-  const authResult = await requireSessionPermission([...FR_READ_PERMS]);
+  const authResult = await requireSessionPermission([...SKILL_READ_PERMS]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.skills.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

@@ -7,7 +7,7 @@ import { getPortalSettings } from '@/lib/settings';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
 export async function GET() {
-  const authResult = await requireSessionPermission('crew.view');
+  const authResult = await requireSessionPermission('crew.dashboard.view');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

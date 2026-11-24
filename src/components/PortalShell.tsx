@@ -110,13 +110,18 @@ export function PortalShell({
   const pathname = usePathname();
   const router = useRouter();
   const permissions = sessionUser?.permissions ?? [];
-  const isAdmin = permissions.includes('admin.manage');
-  const isCrew = permissions.includes('crew.view');
-  const isFrAdmin = permissions.includes('fr.write');
-  const hasFurryResources = permissions.includes('fr.read') || isFrAdmin;
-  const canViewFrLogs = permissions.includes('logs.view_fr');
-  const canViewAdminLogs = permissions.includes('logs.view_admin');
-  const canViewAllLogs = permissions.includes('logs.view_all');
+  const isAdmin = permissions.includes('admin.portal.manage');
+  const isCrew = permissions.includes('crew.dashboard.view');
+  const isFrAdmin = permissions.includes('fr.crew.manage');
+  const canReadFrCrew = permissions.includes('fr.crew.view') || isFrAdmin;
+  const canWriteDepartments = permissions.includes('fr.departments.manage');
+  const canReadDepartments = permissions.includes('fr.departments.view') || canWriteDepartments;
+  const canWriteSkills = permissions.includes('fr.skills.manage');
+  const canReadSkills = permissions.includes('fr.skills.view') || canWriteSkills;
+  const hasFurryResources = canReadFrCrew || canReadDepartments || canReadSkills;
+  const canViewFrLogs = permissions.includes('logs.fr.view');
+  const canViewAdminLogs = permissions.includes('logs.admin.view');
+  const canViewAllLogs = permissions.includes('logs.all.view');
   const canViewLogs = canViewFrLogs || canViewAdminLogs || canViewAllLogs;
   const frCrewDetailMatch = pathname.match(/^\/fr\/crew\/([^/]+)$/);
   const frCrewDetailUserId = frCrewDetailMatch ? decodeURIComponent(frCrewDetailMatch[1]) : null;
@@ -134,11 +139,11 @@ export function PortalShell({
       ? 'org-chart'
       : pathname.startsWith('/crew') && isCrew
       ? 'crew'
-      : pathname.startsWith('/fr/departments') && hasFurryResources
+      : pathname.startsWith('/fr/departments') && canReadDepartments
       ? 'fr-departments'
-      : pathname.startsWith('/fr/skills') && hasFurryResources
+      : pathname.startsWith('/fr/skills') && canReadSkills
       ? 'fr-skills'
-      : pathname.startsWith('/fr') && hasFurryResources
+      : pathname.startsWith('/fr') && canReadFrCrew
       ? 'fr-crew'
       : pathname.startsWith('/logs') && canViewLogs
       ? 'logs'
@@ -568,33 +573,39 @@ export function PortalShell({
               <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
                 Furry Resources
               </div>
-              <NavLink
-                label="Crew Management"
-                leftSection={<IconUsersGroup size={18} />}
-                active={activeTab === 'fr-crew'}
-                onClick={() => {
-                  closeMobileNav();
-                  router.push('/fr/crew');
-                }}
-              />
-              <NavLink
-                label="Departments"
-                leftSection={<IconBuilding size={18} />}
-                active={activeTab === 'fr-departments'}
-                onClick={() => {
-                  closeMobileNav();
-                  router.push('/fr/departments');
-                }}
-              />
-              <NavLink
-                label="Skills"
-                leftSection={<IconAward size={18} />}
-                active={activeTab === 'fr-skills'}
-                onClick={() => {
-                  closeMobileNav();
-                  router.push('/fr/skills');
-                }}
-              />
+              {canReadFrCrew && (
+                <NavLink
+                  label="Crew Management"
+                  leftSection={<IconUsersGroup size={18} />}
+                  active={activeTab === 'fr-crew'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/fr/crew');
+                  }}
+                />
+              )}
+              {canReadDepartments && (
+                <NavLink
+                  label="Departments"
+                  leftSection={<IconBuilding size={18} />}
+                  active={activeTab === 'fr-departments'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/fr/departments');
+                  }}
+                />
+              )}
+              {canReadSkills && (
+                <NavLink
+                  label="Skills"
+                  leftSection={<IconAward size={18} />}
+                  active={activeTab === 'fr-skills'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/fr/skills');
+                  }}
+                />
+              )}
               {!isAdmin && canViewLogs && (
                 <NavLink
                   label="Audit Logs"
@@ -1441,13 +1452,14 @@ export function PortalShell({
           {activeTab === 'org-chart' && isCrew && <OrgChartWorkspace />}
 
           {/* TAB 3: FURRY RESSOURCES (FR) */}
-          {(activeTab === 'fr-crew' ||
-            activeTab === 'fr-departments' ||
-            activeTab === 'fr-skills') &&
-            hasFurryResources && (
+          {((activeTab === 'fr-crew' && canReadFrCrew) ||
+            (activeTab === 'fr-departments' && canReadDepartments) ||
+            (activeTab === 'fr-skills' && canReadSkills)) && (
               <FrWorkspace
                 currentUserId={sessionUser?.id}
                 isFrAdmin={isFrAdmin}
+                canWriteDepartments={canWriteDepartments}
+                canWriteSkills={canWriteSkills}
                 detailUserId={frCrewDetailUserId ?? undefined}
                 section={
                   activeTab === 'fr-departments'

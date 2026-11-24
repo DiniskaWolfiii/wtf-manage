@@ -11,7 +11,7 @@ export default async function AdminPage() {
     redirect('/login?callbackUrl=/admin');
   }
 
-  if (!user.permissions.includes('admin.manage')) {
+  if (!user.permissions.includes('admin.portal.manage')) {
     redirect('/profile');
   }
 

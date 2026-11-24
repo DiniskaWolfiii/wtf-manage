@@ -11,7 +11,10 @@ export default async function FrSkillsPage() {
     redirect('/login?callbackUrl=/fr/skills');
   }
 
-  if (!user.permissions.includes('fr.read') && !user.permissions.includes('fr.write')) {
+  if (
+    !user.permissions.includes('fr.skills.view') &&
+    !user.permissions.includes('fr.skills.manage')
+  ) {
     redirect('/profile');
   }
 

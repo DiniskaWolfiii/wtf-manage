@@ -13,7 +13,7 @@ export default async function CrewPage() {
     redirect('/login?callbackUrl=/crew');
   }
 
-  if (!user.permissions.includes('crew.view')) {
+  if (!user.permissions.includes('crew.dashboard.view')) {
     redirect('/profile');
   }
 

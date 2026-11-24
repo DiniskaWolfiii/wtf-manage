@@ -4,7 +4,7 @@ import { listKeycloakGroups } from '@/lib/keycloak';
 import { requireSessionPermission } from '@/lib/server-auth';
 
 export async function GET() {
-  const authResult = await requireSessionPermission('admin.manage');
+  const authResult = await requireSessionPermission('admin.portal.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

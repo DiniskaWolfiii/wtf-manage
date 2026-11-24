@@ -16,7 +16,7 @@ export default async function FrCrewDetailPage({
     redirect(`/login?callbackUrl=${encodeURIComponent(`/fr/crew/${userId}`)}`);
   }
 
-  if (!user.permissions.includes('fr.read') && !user.permissions.includes('fr.write')) {
+  if (!user.permissions.includes('fr.crew.view') && !user.permissions.includes('fr.crew.manage')) {
     redirect('/profile');
   }
 

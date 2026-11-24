@@ -8,26 +8,30 @@ import {
 } from '@/lib/permission-types';
 import {
   getConfiguredAdminGroup,
+  getCrewOnboardingGroup,
   getPermissionMappings,
+  updateCrewOnboardingGroup,
   updatePermissionMappings,
 } from '@/lib/permissions';
 import { requireSessionPermission } from '@/lib/server-auth';
 
 export async function GET() {
-  const authResult = await requireSessionPermission('admin.manage');
+  const authResult = await requireSessionPermission('admin.portal.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
   try {
-    const [mappings, keycloakGroups] = await Promise.all([
+    const [mappings, crewGroup, keycloakGroups] = await Promise.all([
       getPermissionMappings(),
+      getCrewOnboardingGroup(),
       listKeycloakGroups(),
     ]);
 
     return NextResponse.json({
       definitions: PERMISSION_DEFINITIONS,
       mappings,
+      crewGroup,
       adminGroup: getConfiguredAdminGroup(),
       keycloakGroups: keycloakGroups ?? [],
       keycloakGroupsAvailable: keycloakGroups !== null,
@@ -39,13 +43,16 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const authResult = await requireSessionPermission('admin.manage');
+  const authResult = await requireSessionPermission('admin.portal.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
   try {
-    const rawBody = (await request.json()) as { mappings?: unknown };
+    const rawBody = (await request.json()) as {
+      mappings?: unknown;
+      crewGroup?: unknown;
+    };
     if (
       !rawBody ||
       typeof rawBody !== 'object' ||
@@ -54,6 +61,14 @@ export async function PUT(request: Request) {
       Array.isArray(rawBody.mappings)
     ) {
       return NextResponse.json({ error: 'Invalid permissions payload' }, { status: 400 });
+    }
+
+    if (
+      rawBody.crewGroup !== undefined &&
+      rawBody.crewGroup !== null &&
+      typeof rawBody.crewGroup !== 'string'
+    ) {
+      return NextResponse.json({ error: 'Invalid crewGroup payload' }, { status: 400 });
     }
 
     const inputMappings = rawBody.mappings as Record<string, unknown>;
@@ -65,14 +80,27 @@ export async function PUT(request: Request) {
       sanitizedInput[key] = val.filter((item): item is string => typeof item === 'string');
     }
 
-    const previous = await getPermissionMappings();
-    const updated = await updatePermissionMappings(sanitizedInput);
+    const [previousMappings, previousCrewGroup] = await Promise.all([
+      getPermissionMappings(),
+      getCrewOnboardingGroup(),
+    ]);
+
+    const updatedMappings = await updatePermissionMappings(sanitizedInput);
+    const updatedCrewGroup =
+      rawBody.crewGroup !== undefined
+        ? await updateCrewOnboardingGroup(rawBody.crewGroup as string | null)
+        : previousCrewGroup;
 
     const changedKeys = ALL_PERMISSIONS.filter(
-      (key) => JSON.stringify(previous[key]) !== JSON.stringify(updated[key])
+      (key) => JSON.stringify(previousMappings[key]) !== JSON.stringify(updatedMappings[key])
     );
+    const crewGroupChanged = previousCrewGroup !== updatedCrewGroup;
 
-    if (changedKeys.length > 0) {
+    if (changedKeys.length > 0 || crewGroupChanged) {
+      const targetLabels = [
+        ...changedKeys,
+        ...(crewGroupChanged ? ['crewGroup'] : []),
+      ];
       await recordAuditLog({
         category: 'admin',
         action: 'permissions.updated',
@@ -80,18 +108,22 @@ export async function PUT(request: Request) {
         actorUsername: authResult.username,
         targetType: 'permissions',
         targetId: 'permissionMappings',
-        targetLabel: changedKeys.join(', '),
-        summary: `Updated group mappings for ${changedKeys.join(', ')}`,
+        targetLabel: targetLabels.join(', '),
+        summary: `Updated group mappings for ${targetLabels.join(', ')}`,
         metadata: {
           changedPermissions: changedKeys,
-          previous,
-          updated,
+          previous: previousMappings,
+          updated: updatedMappings,
+          ...(crewGroupChanged
+            ? { previousCrewGroup, updatedCrewGroup }
+            : {}),
         },
       });
     }
 
     return NextResponse.json({
-      mappings: updated,
+      mappings: updatedMappings,
+      crewGroup: updatedCrewGroup,
       adminGroup: getConfiguredAdminGroup(),
     });
   } catch (err) {

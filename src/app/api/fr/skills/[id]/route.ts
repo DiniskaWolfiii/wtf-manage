@@ -20,7 +20,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.skills.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -113,7 +113,7 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.skills.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

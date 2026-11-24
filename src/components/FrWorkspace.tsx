@@ -33,14 +33,20 @@ const SECTION_META: Record<FrSection, { title: string; subtitle: string }> = {
 export function FrWorkspace({
   currentUserId,
   isFrAdmin = false,
+  canWriteDepartments,
+  canWriteSkills,
   section = 'crew',
   detailUserId,
 }: {
   currentUserId?: string;
   isFrAdmin?: boolean;
+  canWriteDepartments?: boolean;
+  canWriteSkills?: boolean;
   section?: FrSection;
   detailUserId?: string;
 }) {
+  const effectiveCanWriteDepartments = canWriteDepartments ?? isFrAdmin;
+  const effectiveCanWriteSkills = canWriteSkills ?? isFrAdmin;
   const [loading, setLoading] = useState(true);
   const [crewGroupConfigured, setCrewGroupConfigured] = useState(true);
   const [users, setUsers] = useState<FrUserItem[]>([]);
@@ -252,7 +258,7 @@ export function FrWorkspace({
           loading={loading}
           departments={departments}
           users={users}
-          isFrAdmin={isFrAdmin}
+          isFrAdmin={effectiveCanWriteDepartments}
           onRefresh={loadData}
           onStatusMessage={setStatusMessage}
         />
@@ -263,6 +269,7 @@ export function FrWorkspace({
           loading={loading}
           skillsCatalog={skillsCatalog}
           users={users}
+          canWrite={effectiveCanWriteSkills}
           onRefresh={loadData}
           onStatusMessage={setStatusMessage}
         />

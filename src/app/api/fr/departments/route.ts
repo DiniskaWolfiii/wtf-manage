@@ -5,7 +5,7 @@ import { requireSessionPermission } from '@/lib/server-auth';
 import { sanitizeDepartmentName } from '@/lib/validation';
 
 export async function GET() {
-  const authResult = await requireSessionPermission(['fr.read', 'fr.write']);
+  const authResult = await requireSessionPermission(['fr.departments.view', 'fr.departments.manage']);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -20,7 +20,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireSessionPermission('fr.write');
+  const authResult = await requireSessionPermission('fr.departments.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

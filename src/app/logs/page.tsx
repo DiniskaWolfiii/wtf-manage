@@ -12,9 +12,9 @@ export default async function AuditLogsPage() {
   }
 
   const canViewLogs =
-    user.permissions.includes('logs.view_fr') ||
-    user.permissions.includes('logs.view_admin') ||
-    user.permissions.includes('logs.view_all');
+    user.permissions.includes('logs.fr.view') ||
+    user.permissions.includes('logs.admin.view') ||
+    user.permissions.includes('logs.all.view');
 
   if (!canViewLogs) {
     redirect('/profile');

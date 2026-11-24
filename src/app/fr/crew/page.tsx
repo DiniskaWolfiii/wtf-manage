@@ -11,7 +11,7 @@ export default async function FrCrewPage() {
     redirect('/login?callbackUrl=/fr/crew');
   }
 
-  if (!user.permissions.includes('fr.read') && !user.permissions.includes('fr.write')) {
+  if (!user.permissions.includes('fr.crew.view') && !user.permissions.includes('fr.crew.manage')) {
     redirect('/profile');
   }
 

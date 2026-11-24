@@ -16,7 +16,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const authResult = await requireSessionPermission('admin.manage');
+  const authResult = await requireSessionPermission('admin.portal.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

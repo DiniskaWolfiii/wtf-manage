@@ -561,14 +561,19 @@ export async function listKeycloakGroups(): Promise<KeycloakGroupSummary[] | nul
 }
 
 /**
- * Find a Keycloak group by exact name (e.g. `wtf-crew`).
+ * Find a Keycloak group by normalized path (e.g. `wtf-crew` or `departments/crew`) or exact name.
  */
-export async function getKeycloakGroupByName(groupName: string): Promise<KeycloakGroupSummary | null> {
+export async function getKeycloakGroupByName(groupIdentifier: string): Promise<KeycloakGroupSummary | null> {
   const groups = await listKeycloakGroups();
   if (!groups) {
     return null;
   }
-  return groups.find((g) => g.name === groupName) ?? null;
+  const normalized = groupIdentifier.trim().replace(/^\/+|\/+$/g, '');
+  return (
+    groups.find(
+      (g) => g.path.replace(/^\/+|\/+$/g, '') === normalized || g.name === normalized
+    ) ?? null
+  );
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   Loader,
   MultiSelect,
   Paper,
+  Select,
   Stack,
   Text,
 } from '@mantine/core';
@@ -33,7 +34,9 @@ export function AdminPermissionsMapping() {
   const [saving, setSaving] = useState(false);
   const [mappings, setMappings] = useState<PermissionMappings>(DEFAULT_PERMISSION_MAPPINGS);
   const [savedMappings, setSavedMappings] = useState<PermissionMappings>(DEFAULT_PERMISSION_MAPPINGS);
-  const [adminGroup, setAdminGroup] = useState('winterfur-admin');
+  const [crewGroup, setCrewGroup] = useState<string | null>(null);
+  const [savedCrewGroup, setSavedCrewGroup] = useState<string | null>(null);
+  const [adminGroup, setAdminGroup] = useState<string | null>(null);
   const [keycloakGroups, setKeycloakGroups] = useState<KeycloakGroupItem[]>([]);
   const [keycloakGroupsAvailable, setKeycloakGroupsAvailable] = useState(true);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -54,9 +57,10 @@ export function AdminPermissionsMapping() {
         setMappings(data.mappings);
         setSavedMappings(data.mappings);
       }
-      if (typeof data.adminGroup === 'string' && data.adminGroup) {
-        setAdminGroup(data.adminGroup);
-      }
+      const nextCrewGroup = typeof data.crewGroup === 'string' && data.crewGroup ? data.crewGroup : null;
+      setCrewGroup(nextCrewGroup);
+      setSavedCrewGroup(nextCrewGroup);
+      setAdminGroup(typeof data.adminGroup === 'string' && data.adminGroup ? data.adminGroup : null);
       setKeycloakGroups(Array.isArray(data.keycloakGroups) ? data.keycloakGroups : []);
       setKeycloakGroupsAvailable(Boolean(data.keycloakGroupsAvailable));
     } catch {
@@ -86,9 +90,13 @@ export function AdminPermissionsMapping() {
           setMappings(data.mappings);
           setSavedMappings(data.mappings);
         }
-        if (typeof data.adminGroup === 'string' && data.adminGroup) {
-          setAdminGroup(data.adminGroup);
-        }
+        const nextCrewGroup =
+          typeof data.crewGroup === 'string' && data.crewGroup ? data.crewGroup : null;
+        setCrewGroup(nextCrewGroup);
+        setSavedCrewGroup(nextCrewGroup);
+        setAdminGroup(
+          typeof data.adminGroup === 'string' && data.adminGroup ? data.adminGroup : null
+        );
         setKeycloakGroups(Array.isArray(data.keycloakGroups) ? data.keycloakGroups : []);
         setKeycloakGroupsAvailable(Boolean(data.keycloakGroupsAvailable));
       })
@@ -119,6 +127,12 @@ export function AdminPermissionsMapping() {
         map.set(normalized, g.path || `/${normalized}`);
       }
     }
+    if (crewGroup) {
+      const normalized = normalizeGroupIdentifier(crewGroup);
+      if (normalized && !map.has(normalized)) {
+        map.set(normalized, `/${normalized}`);
+      }
+    }
     for (const list of Object.values(mappings)) {
       for (const item of list) {
         const normalized = normalizeGroupIdentifier(item);
@@ -130,11 +144,12 @@ export function AdminPermissionsMapping() {
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([value, label]) => ({ value, label }));
-  }, [keycloakGroups, mappings]);
+  }, [keycloakGroups, mappings, crewGroup]);
 
   const hasChanges = useMemo(
-    () => JSON.stringify(mappings) !== JSON.stringify(savedMappings),
-    [mappings, savedMappings]
+    () =>
+      JSON.stringify(mappings) !== JSON.stringify(savedMappings) || crewGroup !== savedCrewGroup,
+    [mappings, savedMappings, crewGroup, savedCrewGroup]
   );
 
   const handleChangePermissionGroups = (permission: PortalPermission, values: string[]) => {
@@ -152,7 +167,7 @@ export function AdminPermissionsMapping() {
       const res = await fetch('/api/admin/permissions', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mappings }),
+        body: JSON.stringify({ mappings, crewGroup }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -166,6 +181,10 @@ export function AdminPermissionsMapping() {
         setMappings(data.mappings);
         setSavedMappings(data.mappings);
       }
+      const nextCrewGroup =
+        typeof data.crewGroup === 'string' && data.crewGroup ? data.crewGroup : null;
+      setCrewGroup(nextCrewGroup);
+      setSavedCrewGroup(nextCrewGroup);
       setStatus({
         type: 'success',
         text: 'Permission mappings saved and active immediately.',
@@ -198,9 +217,15 @@ export function AdminPermissionsMapping() {
               <Text fw={700} size="md" c="white">
                 Permissions &amp; Keycloak Groups
               </Text>
-              <Badge variant="light" color="cyan" size="xs">
-                Super Admin: /{adminGroup}
-              </Badge>
+              {adminGroup ? (
+                <Badge variant="light" color="cyan" size="xs">
+                  Super Admin: /{adminGroup}
+                </Badge>
+              ) : !loading ? (
+                <Badge variant="light" color="yellow" size="xs">
+                  ADMIN_GROUP not set
+                </Badge>
+              ) : null}
             </Group>
             <Text size="xs" c="dimmed">
               Map Keycloak groups to portal pages and actions. The configured super-admin group
@@ -234,6 +259,23 @@ export function AdminPermissionsMapping() {
             </Button>
           </Group>
         </Group>
+
+        {!loading && !adminGroup && (
+          <Paper
+            p="sm"
+            radius="sm"
+            withBorder
+            style={{
+              backgroundColor: 'rgba(250, 176, 5, 0.08)',
+              borderColor: 'var(--mantine-color-yellow-7)',
+            }}
+          >
+            <Text size="xs" c="yellow.3">
+              ADMIN_GROUP is not configured in environment variables. Ensure at least one group is
+              assigned to admin.portal.manage before logging out.
+            </Text>
+          </Paper>
+        )}
 
         {!keycloakGroupsAvailable && (
           <Paper
@@ -280,11 +322,56 @@ export function AdminPermissionsMapping() {
           </Group>
         ) : (
           <Stack gap="lg">
-            {PERMISSION_SECTIONS.map((section, idx) => {
+            <Stack gap="sm">
+              <div className="uppercase-label">Crew Onboarding</div>
+              <Paper
+                p="sm"
+                radius="sm"
+                withBorder
+                style={{
+                  backgroundColor: 'var(--mantine-color-dark-6)',
+                  borderColor: 'var(--mantine-color-dark-4)',
+                }}
+              >
+                <Group justify="space-between" align="center" wrap="wrap" gap="md">
+                  <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                    <Group gap="xs" mb={2}>
+                      <Text size="sm" fw={600} c="white">
+                        Crew Base Group
+                      </Text>
+                      <Badge variant="outline" color="gray" size="xs">
+                        crewGroup
+                      </Badge>
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      Keycloak group assigned when promoting a user to Crew and removed on offboarding.
+                    </Text>
+                  </div>
+
+                  <Select
+                    aria-label="Crew Onboarding Keycloak Group"
+                    placeholder="Select Keycloak group…"
+                    data={groupOptions}
+                    value={crewGroup}
+                    onChange={(val) => {
+                      setCrewGroup(val ? normalizeGroupIdentifier(val) : null);
+                      setStatus(null);
+                    }}
+                    searchable
+                    clearable
+                    nothingFoundMessage="No matching group found"
+                    style={{ flex: '1 1 320px', minWidth: 240 }}
+                    size="xs"
+                  />
+                </Group>
+              </Paper>
+            </Stack>
+
+            {PERMISSION_SECTIONS.map((section) => {
               const items = PERMISSION_DEFINITIONS.filter((d) => d.section === section);
               return (
                 <Stack key={section} gap="sm">
-                  {idx > 0 && <Divider color="var(--mantine-color-dark-4)" />}
+                  <Divider color="var(--mantine-color-dark-4)" />
                   <div className="uppercase-label">{section}</div>
                   <Stack gap="xs">
                     {items.map((def) => (

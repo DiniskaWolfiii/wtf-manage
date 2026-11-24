@@ -6,7 +6,8 @@ import {
   updateDepartmentKeycloakMapping,
 } from '@/lib/crew';
 import { addUserToGroup, listKeycloakGroups } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { isPrivilegedPortalGroup } from '@/lib/permissions';
+import { requireSessionPermission } from '@/lib/server-auth';
 
 function parseDepartmentId(rawId: string): number | null {
   const num = Number(rawId);
@@ -17,7 +18,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('winterfur-admin');
+  const authResult = await requireSessionPermission('admin.portal.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -74,6 +75,14 @@ export async function PUT(
     if (!matchedGroup) {
       return NextResponse.json(
         { error: 'Selected Keycloak group does not exist' },
+        { status: 400 }
+      );
+    }
+
+    // Prevent privilege escalation: super-admin / portal-admin groups must never be mapped to FR departments
+    if (await isPrivilegedPortalGroup([matchedGroup.path, matchedGroup.name])) {
+      return NextResponse.json(
+        { error: 'Privileged admin Keycloak groups cannot be mapped to departments' },
         { status: 400 }
       );
     }

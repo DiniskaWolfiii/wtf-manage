@@ -1,31 +1,58 @@
 import { NextResponse } from 'next/server';
+import { recordAuditLog } from '@/lib/audit';
 import { listAllCrewAssignments, listDepartments } from '@/lib/crew';
+import {
+  getCrewProfileMap,
+  syncAllActiveCrewProfilesFromKeycloak,
+  type CrewStatus,
+} from '@/lib/crew-profiles';
 import {
   getGroupMemberIds,
   getKeycloakGroupByName,
   listKeycloakUsersMinimal,
 } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { getCrewOnboardingGroup } from '@/lib/permissions';
+import { requireSessionPermission } from '@/lib/server-auth';
+import { listAllCrewSkills, listSkills } from '@/lib/skills';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
-const CREW_GROUP_NAME = 'wtf-crew';
-const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
+const FR_ANY_READ_PERMS = [
+  'fr.crew.view',
+  'fr.crew.manage',
+  'fr.departments.view',
+  'fr.departments.manage',
+  'fr.skills.view',
+  'fr.skills.manage',
+] as const;
 
 export async function GET() {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission([...FR_ANY_READ_PERMS]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
-  const isFrAdmin = authResult.roles.includes('furry_ressources_admin');
+  const isFrAdmin = authResult.permissions.includes('fr.crew.manage');
+  const canReadCrew = isFrAdmin || authResult.permissions.includes('fr.crew.view');
+  const canReadDepartments =
+    authResult.permissions.includes('fr.departments.view') ||
+    authResult.permissions.includes('fr.departments.manage');
+  const canReadSkills =
+    authResult.permissions.includes('fr.skills.view') ||
+    authResult.permissions.includes('fr.skills.manage');
+  const isPortalAdmin = authResult.permissions.includes('admin.portal.manage');
 
   try {
-    const [kcUsers, crewGroup, departments, assignments] = await Promise.all([
-      listKeycloakUsersMinimal(),
-      getKeycloakGroupByName(CREW_GROUP_NAME),
-      listDepartments(),
-      listAllCrewAssignments(),
-    ]);
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    const [kcUsers, crewGroup, departments, assignments, skillsCatalog, crewSkills, profileMap] =
+      await Promise.all([
+        listKeycloakUsersMinimal(),
+        crewGroupIdentifier ? getKeycloakGroupByName(crewGroupIdentifier) : Promise.resolve(null),
+        listDepartments(),
+        listAllCrewAssignments(),
+        listSkills(),
+        listAllCrewSkills(),
+        getCrewProfileMap(),
+      ]);
 
     if (!kcUsers) {
       return NextResponse.json(
@@ -53,25 +80,166 @@ export async function GET() {
       assignmentsByUser.set(a.userId, list);
     }
 
-    const allUsers = kcUsers.map((u) => ({
-      id: u.id,
-      username: u.username,
-      avatarUrl: getSafeAvatarUrl(u.avatarUrl) ?? undefined,
-      isCrew: crewMemberIds.has(u.id),
-      roles: assignmentsByUser.get(u.id) ?? [],
-    }));
+    const skillsByUser = new Map<
+      string,
+      Array<{ skillId: number; skillName: string; category: string; level: string }>
+    >();
+    for (const s of crewSkills) {
+      const list = skillsByUser.get(s.userId) ?? [];
+      list.push({
+        skillId: s.skillId,
+        skillName: s.skillName,
+        category: s.category,
+        level: s.level,
+      });
+      skillsByUser.set(s.userId, list);
+    }
 
-    // Standard FR only receives active crew members; FR Admin also sees non-crew users for promotion
-    const users = isFrAdmin ? allUsers : allUsers.filter((u) => u.isCrew);
+    const seenUserIds = new Set<string>();
+    const allUsers = kcUsers.map((u) => {
+      seenUserIds.add(u.id);
+      const isCrew = crewMemberIds.has(u.id);
+      const master = profileMap.get(u.id);
+      const status: CrewStatus | null = master
+        ? master.status
+        : isCrew
+        ? 'active'
+        : null;
+
+      return {
+        id: u.id,
+        username: master?.username || u.username,
+        avatarUrl: getSafeAvatarUrl(u.avatarUrl) ?? master?.avatarUrl ?? undefined,
+        isCrew,
+        status,
+        joinedAt: master?.joinedAt ?? null,
+        offboardedAt: master?.offboardedAt ?? null,
+        hasMasterProfile: Boolean(master),
+        roles: assignmentsByUser.get(u.id) ?? [],
+        skills: skillsByUser.get(u.id) ?? [],
+      };
+    });
+
+    // Include Alumni / offboarded master profiles whose Keycloak account may no longer be returned
+    for (const master of profileMap.values()) {
+      if (seenUserIds.has(master.userId)) continue;
+      allUsers.push({
+        id: master.userId,
+        username: master.username,
+        avatarUrl: master.avatarUrl,
+        isCrew: false,
+        status: master.status,
+        joinedAt: master.joinedAt,
+        offboardedAt: master.offboardedAt,
+        hasMasterProfile: true,
+        roles: assignmentsByUser.get(master.userId) ?? [],
+        skills: skillsByUser.get(master.userId) ?? [],
+      });
+    }
+
+    // Scope returned users & fields strictly to the caller's individual FR permissions:
+    // - fr.crew.manage: all Keycloak users + master profiles (for onboarding)
+    // - fr.crew.view: active crew + stored master profiles (including on_leave / Alumni)
+    // - fr.departments.* / fr.skills.* only: active crew only with minimal fields needed for ranking/skill finder
+    const users = isFrAdmin
+      ? allUsers
+      : canReadCrew
+      ? allUsers.filter((u) => u.isCrew || u.hasMasterProfile)
+      : allUsers
+          .filter((u) => u.isCrew)
+          .map((u) => ({
+            id: u.id,
+            username: u.username,
+            avatarUrl: u.avatarUrl,
+            isCrew: true,
+            status: 'active' as CrewStatus,
+            joinedAt: null,
+            offboardedAt: null,
+            hasMasterProfile: false,
+            roles: canReadDepartments ? u.roles : [],
+            skills: canReadSkills ? u.skills : [],
+          }));
+
+    const scopedDepartments =
+      canReadDepartments || canReadCrew
+        ? departments.map((d) => ({
+            ...d,
+            keycloakGroupId: isPortalAdmin ? d.keycloakGroupId : null,
+          }))
+        : [];
+
+    const scopedSkillsCatalog = canReadSkills || canReadCrew ? skillsCatalog : [];
 
     return NextResponse.json({
       crewGroupConfigured: Boolean(crewGroup),
       isFrAdmin,
       users,
-      departments,
+      departments: scopedDepartments,
+      skillsCatalog: scopedSkillsCatalog,
     });
   } catch (err) {
     console.error('[API] GET /api/fr/crew failed:', (err as Error).message);
     return NextResponse.json({ error: 'Failed to load FR crew data' }, { status: 500 });
+  }
+}
+
+/**
+ * Sync / backfill all active `wtf-crew` members from Keycloak into `crew_profiles`.
+ */
+export async function POST() {
+  const authResult = await requireSessionPermission('fr.crew.manage');
+  if (authResult instanceof NextResponse) {
+    return authResult;
+  }
+
+  try {
+    const crewGroupIdentifier = await getCrewOnboardingGroup();
+    if (!crewGroupIdentifier) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group is not configured in Admin → Permissions.' },
+        { status: 400 }
+      );
+    }
+
+    const [kcUsers, crewGroup] = await Promise.all([
+      listKeycloakUsersMinimal(),
+      getKeycloakGroupByName(crewGroupIdentifier),
+    ]);
+
+    if (!kcUsers) {
+      return NextResponse.json(
+        { error: 'Failed to load users from Keycloak' },
+        { status: 502 }
+      );
+    }
+    if (!crewGroup) {
+      return NextResponse.json(
+        { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
+        { status: 500 }
+      );
+    }
+
+    const crewMemberIds = (await getGroupMemberIds(crewGroup.id)) ?? new Set<string>();
+    const result = await syncAllActiveCrewProfilesFromKeycloak(kcUsers, crewMemberIds, {
+      userId: authResult.userId,
+      username: authResult.username,
+    });
+
+    await recordAuditLog({
+      category: 'fr',
+      action: 'crew.profiles_synced',
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
+      targetType: 'user',
+      targetId: null,
+      targetLabel: crewGroupIdentifier,
+      summary: `Synced crew master profiles from Keycloak (${result.created} created, ${result.updated} updated)`,
+      metadata: result,
+    });
+
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[API] POST /api/fr/crew failed:', (err as Error).message);
+    return NextResponse.json({ error: 'Failed to sync crew profiles' }, { status: 500 });
   }
 }

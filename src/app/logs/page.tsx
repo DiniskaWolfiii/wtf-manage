@@ -1,22 +1,20 @@
-import { auth } from '@/auth';
 import { fetchKeycloakUser, fetchUserCredentials } from '@/lib/keycloak';
-import { getServerAccessToken } from '@/lib/server-auth';
-import { getIdentityDisplayConfig, getPortalSettings } from '@/lib/settings';
+import { getServerAccessToken, getSessionWithPermissions } from '@/lib/server-auth';
+import { getIdentityDisplayConfig, getPortalSettingsForPermissions } from '@/lib/settings';
 import { PortalShell } from '@/components/PortalShell';
 import { redirect } from 'next/navigation';
 
 export default async function AuditLogsPage() {
-  const session = await auth();
+  const user = await getSessionWithPermissions();
 
-  if (!session || !session.user || !session.user.id) {
+  if (!user) {
     redirect('/login?callbackUrl=/logs');
   }
 
-  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
   const canViewLogs =
-    roles.includes('winterfur-admin') ||
-    roles.includes('furry_ressources') ||
-    roles.includes('furry_ressources_admin');
+    user.permissions.includes('logs.fr.view') ||
+    user.permissions.includes('logs.admin.view') ||
+    user.permissions.includes('logs.all.view');
 
   if (!canViewLogs) {
     redirect('/profile');
@@ -24,20 +22,11 @@ export default async function AuditLogsPage() {
 
   const accessToken = await getServerAccessToken();
   const [initialProfile, initialSecurity, initialSettings] = await Promise.all([
-    fetchKeycloakUser(session.user.id, accessToken),
-    fetchUserCredentials(session.user.id),
-    getPortalSettings(),
+    fetchKeycloakUser(user.id, accessToken),
+    fetchUserCredentials(user.id),
+    getPortalSettingsForPermissions(user.permissions),
   ]);
   const identityConfig = getIdentityDisplayConfig();
-
-  const user = {
-    id: session.user.id,
-    name: session.user.name || '',
-    email: session.user.email || '',
-    image: session.user.image || '',
-    username: (session.user as unknown as { username?: string }).username || session.user.name || '',
-    roles,
-  };
 
   return (
     <PortalShell

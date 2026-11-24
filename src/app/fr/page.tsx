@@ -1,46 +1,27 @@
-import { auth } from '@/auth';
-import { fetchKeycloakUser, fetchUserCredentials } from '@/lib/keycloak';
-import { getServerAccessToken } from '@/lib/server-auth';
-import { getIdentityDisplayConfig, getPortalSettings } from '@/lib/settings';
-import { PortalShell } from '@/components/PortalShell';
+import { getSessionWithPermissions } from '@/lib/server-auth';
 import { redirect } from 'next/navigation';
 
-export default async function FrPage() {
-  const session = await auth();
+export default async function FrIndexPage() {
+  const user = await getSessionWithPermissions();
 
-  if (!session || !session.user || !session.user.id) {
-    redirect('/login?callbackUrl=/fr');
+  if (!user) {
+    redirect('/login?callbackUrl=/fr/crew');
   }
 
-  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
-  if (!roles.includes('furry_ressources') && !roles.includes('furry_ressources_admin')) {
-    redirect('/profile');
+  if (user.permissions.includes('fr.crew.view') || user.permissions.includes('fr.crew.manage')) {
+    redirect('/fr/crew');
   }
 
-  const accessToken = await getServerAccessToken();
-  const [initialProfile, initialSecurity, initialSettings] = await Promise.all([
-    fetchKeycloakUser(session.user.id, accessToken),
-    fetchUserCredentials(session.user.id),
-    getPortalSettings(),
-  ]);
-  const identityConfig = getIdentityDisplayConfig();
+  if (
+    user.permissions.includes('fr.departments.view') ||
+    user.permissions.includes('fr.departments.manage')
+  ) {
+    redirect('/fr/departments');
+  }
 
-  const user = {
-    id: session.user.id,
-    name: session.user.name || '',
-    email: session.user.email || '',
-    image: session.user.image || '',
-    username: (session.user as unknown as { username?: string }).username || session.user.name || '',
-    roles,
-  };
+  if (user.permissions.includes('fr.skills.view') || user.permissions.includes('fr.skills.manage')) {
+    redirect('/fr/skills');
+  }
 
-  return (
-    <PortalShell
-      sessionUser={user}
-      initialProfile={initialProfile || undefined}
-      initialSecurity={initialSecurity}
-      initialSettings={initialSettings}
-      identityConfig={identityConfig}
-    />
-  );
+  redirect('/profile');
 }

@@ -42,13 +42,18 @@ import {
   IconUsersGroup,
   IconSitemap,
   IconHistory,
+  IconBuilding,
+  IconAward,
 } from '@tabler/icons-react';
 import type { UserCrewRole } from '@/lib/crew';
+import type { UserCrewSkill } from '@/lib/skills';
 import type { UserProfileData } from '@/lib/keycloak';
 import { FrWorkspace } from '@/components/FrWorkspace';
 import { AdminDepartmentMapping } from '@/components/AdminDepartmentMapping';
+import { AdminPermissionsMapping } from '@/components/AdminPermissionsMapping';
 import { OrgChartWorkspace } from '@/components/OrgChartWorkspace';
 import { AuditLogsWorkspace } from '@/components/AuditLogsWorkspace';
+import type { PortalPermission } from '@/lib/permission-types';
 import {
   DEFAULT_PORTAL_SETTINGS,
   type IdentityDisplayConfig,
@@ -82,7 +87,7 @@ export interface SessionUser {
   email: string;
   username: string;
   image: string;
-  roles: string[];
+  permissions: PortalPermission[];
 }
 
 export function PortalShell({
@@ -92,6 +97,7 @@ export function PortalShell({
   initialSettings,
   identityConfig,
   initialCrewRoles,
+  initialCrewSkills,
 }: {
   sessionUser?: SessionUser;
   initialProfile?: UserProfileData;
@@ -99,23 +105,46 @@ export function PortalShell({
   initialSettings?: PortalSettings;
   identityConfig?: IdentityDisplayConfig;
   initialCrewRoles?: UserCrewRole[];
+  initialCrewSkills?: UserCrewSkill[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
-  const isCrew = sessionUser?.roles?.includes('crew') ?? false;
-  const isFrAdmin = sessionUser?.roles?.includes('furry_ressources_admin') ?? false;
-  const hasFurryResources =
-    (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
-  const canViewLogs = isAdmin || hasFurryResources;
+  const permissions = sessionUser?.permissions ?? [];
+  const isAdmin = permissions.includes('admin.portal.manage');
+  const isCrew = permissions.includes('crew.dashboard.view');
+  const isFrAdmin = permissions.includes('fr.crew.manage');
+  const canReadFrCrew = permissions.includes('fr.crew.view') || isFrAdmin;
+  const canWriteDepartments = permissions.includes('fr.departments.manage');
+  const canReadDepartments = permissions.includes('fr.departments.view') || canWriteDepartments;
+  const canWriteSkills = permissions.includes('fr.skills.manage');
+  const canReadSkills = permissions.includes('fr.skills.view') || canWriteSkills;
+  const hasFurryResources = canReadFrCrew || canReadDepartments || canReadSkills;
+  const canViewFrLogs = permissions.includes('logs.fr.view');
+  const canViewAdminLogs = permissions.includes('logs.admin.view');
+  const canViewAllLogs = permissions.includes('logs.all.view');
+  const canViewLogs = canViewFrLogs || canViewAdminLogs || canViewAllLogs;
+  const frCrewDetailMatch = pathname.match(/^\/fr\/crew\/([^/]+)$/);
+  const frCrewDetailUserId = frCrewDetailMatch ? decodeURIComponent(frCrewDetailMatch[1]) : null;
 
-  const activeTab: 'profile' | 'crew' | 'org-chart' | 'fr' | 'admin' | 'logs' =
+  const activeTab:
+    | 'profile'
+    | 'crew'
+    | 'org-chart'
+    | 'fr-crew'
+    | 'fr-departments'
+    | 'fr-skills'
+    | 'admin'
+    | 'logs' =
     pathname.startsWith('/crew/org-chart') && isCrew
       ? 'org-chart'
       : pathname.startsWith('/crew') && isCrew
       ? 'crew'
-      : pathname.startsWith('/fr') && hasFurryResources
-      ? 'fr'
+      : pathname.startsWith('/fr/departments') && canReadDepartments
+      ? 'fr-departments'
+      : pathname.startsWith('/fr/skills') && canReadSkills
+      ? 'fr-skills'
+      : pathname.startsWith('/fr') && canReadFrCrew
+      ? 'fr-crew'
       : pathname.startsWith('/logs') && canViewLogs
       ? 'logs'
       : pathname.startsWith('/admin') && isAdmin
@@ -127,7 +156,9 @@ export function PortalShell({
   const [mobileNavOpened, { toggle: toggleMobileNav, close: closeMobileNav }] = useDisclosure(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(!initialProfile);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    null
+  );
 
   // Live Security Data from Keycloak
   const [security, setSecurity] = useState<SecurityData>(
@@ -149,10 +180,11 @@ export function PortalShell({
       firstName: sessionUser?.name?.split(' ')[0] || '',
       lastName: sessionUser?.name?.split(' ').slice(1).join(' ') || '',
       email: sessionUser?.email || '',
-      nickname: sessionUser?.name || sessionUser?.username || 'Kodiak',
-      telegram: '@kodiak',
-      species: 'Polar Bear',
-      pronouns: 'he/him',
+      emailVerified: false,
+      nickname: sessionUser?.name || sessionUser?.username || '',
+      telegram: '',
+      species: 'Other',
+      pronouns: '',
       phone: '',
       street: '',
       zip: '',
@@ -166,6 +198,11 @@ export function PortalShell({
   const [editForm, setEditForm] = useState({ ...profile });
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [isSendingVerifyEmail, setIsSendingVerifyEmail] = useState(false);
+  const [verifyEmailFeedback, setVerifyEmailFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   // Portal Settings & Quick Links State (loaded from MySQL via server props)
   const [conventionName, setConventionName] = useState(
@@ -217,24 +254,87 @@ export function PortalShell({
     e.preventDefault();
     setIsSaving(true);
     setSaveStatus(null);
+    setVerifyEmailFeedback(null);
     try {
       const res = await fetch('/api/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm),
       });
-      if (res.ok) {
-        setProfile({ ...editForm });
+      const data = (await res.json().catch(() => null)) as {
+        success?: boolean;
+        emailChanged?: boolean;
+        emailVerified?: boolean;
+        verificationEmailSent?: boolean;
+        message?: string;
+        error?: string;
+      } | null;
+
+      if (res.ok && data?.success) {
+        const nextEmailVerified = data.emailChanged
+          ? false
+          : typeof data.emailVerified === 'boolean'
+          ? data.emailVerified
+          : profile.emailVerified;
+        const updatedProfile = { ...editForm, emailVerified: nextEmailVerified };
+        setProfile(updatedProfile);
+        setEditForm(updatedProfile);
         setIsEditingProfile(false);
-        setSaveStatus('Profile saved and synced with WinterFur Identity!');
+        setSaveStatus({
+          type: 'success',
+          text: data.message || 'Profile saved and synced with WinterFur Identity!',
+        });
       } else {
-        setSaveStatus('Could not sync changes to WinterFur Identity.');
+        setSaveStatus({
+          type: 'error',
+          text: data?.error || data?.message || 'Could not sync changes to WinterFur Identity.',
+        });
       }
     } catch (err) {
       console.error(err);
-      setSaveStatus('Error saving profile.');
+      setSaveStatus({ type: 'error', text: 'Error saving profile.' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleResendVerifyEmail = async () => {
+    setIsSendingVerifyEmail(true);
+    setVerifyEmailFeedback(null);
+    try {
+      const res = await fetch('/api/profile/verify-email', { method: 'POST' });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        alreadyVerified?: boolean;
+        error?: string;
+      } | null;
+      if (!res.ok) {
+        setVerifyEmailFeedback({
+          type: 'error',
+          text: data?.error || 'Could not send verification email.',
+        });
+        return;
+      }
+      if (data?.alreadyVerified) {
+        setProfile((prev) => ({ ...prev, emailVerified: true }));
+        setEditForm((prev) => ({ ...prev, emailVerified: true }));
+        setVerifyEmailFeedback({
+          type: 'success',
+          text: 'Your email address is already verified.',
+        });
+      } else {
+        setVerifyEmailFeedback({
+          type: 'success',
+          text: 'Verification email sent! Please check your inbox.',
+        });
+      }
+    } catch {
+      setVerifyEmailFeedback({
+        type: 'error',
+        text: 'Network error while requesting verification email.',
+      });
+    } finally {
+      setIsSendingVerifyEmail(false);
     }
   };
 
@@ -265,7 +365,7 @@ export function PortalShell({
       if (safeUrl) {
         setEditForm((prev) => ({ ...prev, avatarUrl: safeUrl }));
         setProfile((prev) => ({ ...prev, avatarUrl: safeUrl }));
-        setSaveStatus('Profile picture updated!');
+        setSaveStatus({ type: 'success', text: 'Profile picture updated!' });
       }
     } catch (err) {
       console.error('Failed to upload avatar:', err);
@@ -287,7 +387,7 @@ export function PortalShell({
       }
       setEditForm((prev) => ({ ...prev, avatarUrl: '' }));
       setProfile((prev) => ({ ...prev, avatarUrl: '' }));
-      setSaveStatus('Profile picture removed.');
+      setSaveStatus({ type: 'success', text: 'Profile picture removed.' });
     } catch (err) {
       console.error('Failed to remove avatar:', err);
       setAvatarError('Network error while removing profile picture.');
@@ -384,7 +484,7 @@ export function PortalShell({
     await persistSettings({ quickLinks: nextLinks }, 'Quick links order updated.');
   };
 
-  const initials = profile.nickname.slice(0, 2).toUpperCase();
+  const initials = (profile.nickname || profile.username || '?').slice(0, 2).toUpperCase();
 
   return (
     <AppShell
@@ -544,16 +644,40 @@ export function PortalShell({
               <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
                 Furry Resources
               </div>
-              <NavLink
-                label="FR Dashboard"
-                leftSection={<IconUsersGroup size={18} />}
-                active={activeTab === 'fr'}
-                onClick={() => {
-                  closeMobileNav();
-                  router.push('/fr');
-                }}
-              />
-              {!isAdmin && (
+              {canReadFrCrew && (
+                <NavLink
+                  label="Crew Management"
+                  leftSection={<IconUsersGroup size={18} />}
+                  active={activeTab === 'fr-crew'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/fr/crew');
+                  }}
+                />
+              )}
+              {canReadDepartments && (
+                <NavLink
+                  label="Departments"
+                  leftSection={<IconBuilding size={18} />}
+                  active={activeTab === 'fr-departments'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/fr/departments');
+                  }}
+                />
+              )}
+              {canReadSkills && (
+                <NavLink
+                  label="Skills"
+                  leftSection={<IconAward size={18} />}
+                  active={activeTab === 'fr-skills'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/fr/skills');
+                  }}
+                />
+              )}
+              {!isAdmin && canViewLogs && (
                 <NavLink
                   label="Audit Logs"
                   leftSection={<IconHistory size={18} />}
@@ -564,6 +688,23 @@ export function PortalShell({
                   }}
                 />
               )}
+            </div>
+          )}
+
+          {!isAdmin && !hasFurryResources && canViewLogs && (
+            <div>
+              <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+                Logs
+              </div>
+              <NavLink
+                label="Audit Logs"
+                leftSection={<IconHistory size={18} />}
+                active={activeTab === 'logs'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/logs');
+                }}
+              />
             </div>
           )}
 
@@ -581,15 +722,17 @@ export function PortalShell({
                   router.push('/admin');
                 }}
               />
-              <NavLink
-                label="Audit Logs"
-                leftSection={<IconHistory size={18} />}
-                active={activeTab === 'logs'}
-                onClick={() => {
-                  closeMobileNav();
-                  router.push('/logs');
-                }}
-              />
+              {canViewLogs && (
+                <NavLink
+                  label="Audit Logs"
+                  leftSection={<IconHistory size={18} />}
+                  active={activeTab === 'logs'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/logs');
+                  }}
+                />
+              )}
             </div>
           )}
         </Stack>
@@ -742,17 +885,77 @@ export function PortalShell({
 
                           <Divider color="var(--mantine-color-dark-4)" />
 
-                          {/* Contact (2 cols, badge removed) */}
+                          {/* Contact (2 cols) */}
                           <Grid gap={16}>
                             <Grid.Col span={{ base: 12, sm: 6 }}>
-                              <div className="uppercase-label">Email Address</div>
+                              <Group gap="xs" align="center" mb={4}>
+                                <div className="uppercase-label" style={{ marginBottom: 0 }}>
+                                  Email Address
+                                </div>
+                                {profile.email && (
+                                  <Badge
+                                    size="xs"
+                                    variant="light"
+                                    color={profile.emailVerified ? 'teal' : 'yellow'}
+                                  >
+                                    {profile.emailVerified ? 'Verified' : 'Unverified'}
+                                  </Badge>
+                                )}
+                              </Group>
                               <div className="profile-field-value">{profile.email || '—'}</div>
+                              {profile.email && !profile.emailVerified && (
+                                <Group gap="xs" mt={6} align="center">
+                                  <Button
+                                    variant="default"
+                                    size="compact-xs"
+                                    loading={isSendingVerifyEmail}
+                                    onClick={() => void handleResendVerifyEmail()}
+                                  >
+                                    Resend Verification
+                                  </Button>
+                                </Group>
+                              )}
+                              {verifyEmailFeedback && (
+                                <Text
+                                  size="xs"
+                                  mt={6}
+                                  c={verifyEmailFeedback.type === 'success' ? 'teal.4' : 'red.4'}
+                                >
+                                  {verifyEmailFeedback.text}
+                                </Text>
+                              )}
                             </Grid.Col>
                             <Grid.Col span={{ base: 12, sm: 6 }}>
                               <div className="uppercase-label">Phone Number</div>
                               <div className="profile-field-value">{profile.phone || '—'}</div>
                             </Grid.Col>
                           </Grid>
+
+                          {saveStatus && (
+                            <Paper
+                              p="sm"
+                              radius="sm"
+                              withBorder
+                              style={{
+                                backgroundColor:
+                                  saveStatus.type === 'success'
+                                    ? 'rgba(18, 184, 134, 0.1)'
+                                    : 'rgba(250, 82, 82, 0.1)',
+                                borderColor:
+                                  saveStatus.type === 'success'
+                                    ? 'rgba(18, 184, 134, 0.35)'
+                                    : 'rgba(250, 82, 82, 0.35)',
+                              }}
+                            >
+                              <Text
+                                size="xs"
+                                fw={600}
+                                c={saveStatus.type === 'success' ? 'teal.4' : 'red.4'}
+                              >
+                                {saveStatus.text}
+                              </Text>
+                            </Paper>
+                          )}
 
                           <Divider color="var(--mantine-color-dark-4)" />
 
@@ -1024,9 +1227,9 @@ export function PortalShell({
                         {saveStatus ? (
                           <Text
                             size="xs"
-                            c={saveStatus.includes('saved') ? 'teal' : 'red'}
+                            c={saveStatus.type === 'success' ? 'teal.4' : 'red.4'}
                           >
-                            {saveStatus}
+                            {saveStatus.text}
                           </Text>
                         ) : <div />}
                         <Group gap="sm">
@@ -1255,12 +1458,12 @@ export function PortalShell({
                             <Text size="md" fw={700} c="white">
                               Volunteer Agreement (NDA)
                             </Text>
-                            <Badge color="teal" variant="light">
-                              Signed
+                            <Badge color="cyan" variant="light">
+                              Version 2.1
                             </Badge>
                           </Group>
                           <Text size="xs" c="dimmed" mt={4}>
-                            Signed Oct 12, 2026 • Version 2.1
+                            WinterFur Volunteer Confidentiality &amp; Code of Conduct
                           </Text>
                         </div>
                         <Button
@@ -1348,12 +1551,19 @@ export function PortalShell({
                         <div className="uppercase-label" style={{ marginBottom: 8 }}>
                           My Skills (FR Managed)
                         </div>
-                        <Group gap="xs">
-                          <Pill size="md">German - Native</Pill>
-                          <Pill size="md">English - B2</Pill>
-                          <Pill size="md">Communication - Advanced</Pill>
-                          <Pill size="md">First Aid - Basic</Pill>
-                        </Group>
+                        {initialCrewSkills && initialCrewSkills.length > 0 ? (
+                          <Group gap="xs">
+                            {initialCrewSkills.map((skill) => (
+                              <Pill key={skill.skillId} size="md">
+                                {skill.skillName} - {skill.level}
+                              </Pill>
+                            ))}
+                          </Group>
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            No skills assigned yet.
+                          </Text>
+                        )}
                       </div>
 
                       <Divider color="var(--mantine-color-dark-4)" />
@@ -1373,9 +1583,24 @@ export function PortalShell({
           {activeTab === 'org-chart' && isCrew && <OrgChartWorkspace />}
 
           {/* TAB 3: FURRY RESSOURCES (FR) */}
-          {activeTab === 'fr' && hasFurryResources && (
-            <FrWorkspace currentUserId={sessionUser?.id} isFrAdmin={isFrAdmin} />
-          )}
+          {((activeTab === 'fr-crew' && canReadFrCrew) ||
+            (activeTab === 'fr-departments' && canReadDepartments) ||
+            (activeTab === 'fr-skills' && canReadSkills)) && (
+              <FrWorkspace
+                currentUserId={sessionUser?.id}
+                isFrAdmin={isFrAdmin}
+                canWriteDepartments={canWriteDepartments}
+                canWriteSkills={canWriteSkills}
+                detailUserId={frCrewDetailUserId ?? undefined}
+                section={
+                  activeTab === 'fr-departments'
+                    ? 'departments'
+                    : activeTab === 'fr-skills'
+                    ? 'skills'
+                    : 'crew'
+                }
+              />
+            )}
 
           {/* TAB 4: ADMIN PORTAL SETTINGS */}
           {activeTab === 'admin' && isAdmin && (
@@ -1607,11 +1832,16 @@ export function PortalShell({
               </Grid>
 
               <AdminDepartmentMapping />
+              <AdminPermissionsMapping />
             </Stack>
           )}
           {/* TAB 5: AUDIT LOGS */}
           {activeTab === 'logs' && canViewLogs && (
-            <AuditLogsWorkspace isAdmin={isAdmin} />
+            <AuditLogsWorkspace
+              canViewFr={canViewFrLogs}
+              canViewAdmin={canViewAdminLogs}
+              canViewAll={canViewAllLogs}
+            />
           )}
         </Box>
       </AppShell.Main>

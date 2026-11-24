@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
+import { syncKeycloakSnapshotIfExists } from '@/lib/crew-profiles';
 import { fetchKeycloakUser, updateKeycloakUser } from '@/lib/keycloak';
 import { getServerAccessToken } from '@/lib/server-auth';
 import { deleteAvatarByUrl, isStorageConfigured, uploadAvatarBuffer } from '@/lib/storage';
@@ -9,11 +10,24 @@ import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_UPLOAD_BYTES } from '@/lib/valida
 
 const ALLOWED_SHARP_FORMATS = new Set(['png', 'jpeg', 'webp', 'gif']);
 const AVATAR_DIMENSION_PX = 256;
+const MAX_MULTIPART_CONTENT_LENGTH = MAX_AVATAR_UPLOAD_BYTES + 1024 * 1024; // 5 MB image + 1 MB multipart overhead
+const MAX_SHARP_INPUT_PIXELS = 16_000_000;
 
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const contentLengthHeader = req.headers.get('content-length');
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader);
+    if (Number.isFinite(contentLength) && contentLength > MAX_MULTIPART_CONTENT_LENGTH) {
+      return NextResponse.json(
+        { error: 'Upload payload is too large. Maximum image size is 5 MB.' },
+        { status: 413 }
+      );
+    }
   }
 
   if (!isStorageConfigured()) {
@@ -52,7 +66,11 @@ export async function POST(req: Request) {
   let webpBuffer: Buffer;
   try {
     const inputBuffer = Buffer.from(await file.arrayBuffer());
-    const image = sharp(inputBuffer, { limitInputPixels: 25_000_000 });
+    const image = sharp(inputBuffer, {
+      limitInputPixels: MAX_SHARP_INPUT_PIXELS,
+      pages: 1,
+      sequentialRead: true,
+    });
     const metadata = await image.metadata();
 
     if (!metadata.format || !ALLOWED_SHARP_FORMATS.has(metadata.format)) {
@@ -102,6 +120,8 @@ export async function POST(req: Request) {
     );
   }
 
+  await syncKeycloakSnapshotIfExists(userId, { avatarUrl: newAvatarUrl });
+
   if (previousAvatarUrl && previousAvatarUrl !== newAvatarUrl) {
     await deleteAvatarByUrl(previousAvatarUrl, userId).catch((err) => {
       console.error('Failed to delete previous avatar from R2:', err);
@@ -145,6 +165,8 @@ export async function DELETE() {
       { status: 502 }
     );
   }
+
+  await syncKeycloakSnapshotIfExists(userId, { avatarUrl: '' });
 
   if (currentProfile?.avatarUrl) {
     await deleteAvatarByUrl(currentProfile.avatarUrl, userId).catch((err) => {

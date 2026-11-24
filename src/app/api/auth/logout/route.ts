@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signOut } from '@/auth';
+import { assertSameOrigin, getExpectedAppOrigin } from '@/lib/csrf';
 import { getServerIdToken } from '@/lib/server-auth';
 
 /**
@@ -7,13 +8,12 @@ import { getServerIdToken } from '@/lib/server-auth';
  * so the user's SSO session at WinterFur Identity is also terminated.
  */
 export async function POST(req: NextRequest) {
-  const origin = req.headers.get('origin');
-  const appOrigin = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-  const expectedOrigin = new URL(appOrigin).origin;
-  if (origin && origin !== expectedOrigin) {
-    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+  const csrfRejection = assertSameOrigin(req);
+  if (csrfRejection) {
+    return csrfRejection;
   }
 
+  const expectedOrigin = getExpectedAppOrigin(req.nextUrl.origin);
   const idToken = await getServerIdToken();
 
   await signOut({ redirect: false });

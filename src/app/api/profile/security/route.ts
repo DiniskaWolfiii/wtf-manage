@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
-import { fetchUserCredentials, deleteUserCredential } from '@/lib/keycloak';
+import { fetchUserCredentials, deleteUserPasskeyCredential } from '@/lib/keycloak';
 
 export async function GET() {
   const session = await auth();
@@ -32,26 +32,40 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: 'Invalid credentialId' }, { status: 400 });
   }
 
-  const success = await deleteUserCredential(session.user.id, credentialId);
+  const result = await deleteUserPasskeyCredential(session.user.id, credentialId);
 
-  if (success) {
-    const actorUsername =
-      (session.user as unknown as { username?: string }).username ||
-      session.user.name ||
-      session.user.id;
-    await recordAuditLog({
-      category: 'profile',
-      action: 'profile.passkey_deleted',
-      actorUserId: session.user.id,
-      actorUsername,
-      targetType: 'credential',
-      targetId: credentialId,
-      targetLabel: actorUsername,
-      summary: `Removed security credential (${credentialId}) for "${actorUsername}"`,
-      metadata: { credentialId },
-    });
+  if (result === 'forbidden') {
+    return NextResponse.json(
+      { error: 'Only passkey credentials can be removed from this endpoint' },
+      { status: 403 }
+    );
+  }
+  if (result === 'not_found') {
+    return NextResponse.json({ error: 'Credential not found' }, { status: 404 });
+  }
+  if (result !== 'deleted') {
+    return NextResponse.json(
+      { error: 'Failed to remove passkey credential' },
+      { status: 502 }
+    );
   }
 
-  return NextResponse.json({ success });
+  const actorUsername =
+    (session.user as unknown as { username?: string }).username ||
+    session.user.name ||
+    session.user.id;
+  await recordAuditLog({
+    category: 'profile',
+    action: 'profile.passkey_deleted',
+    actorUserId: session.user.id,
+    actorUsername,
+    targetType: 'credential',
+    targetId: credentialId,
+    targetLabel: actorUsername,
+    summary: `Removed passkey credential (${credentialId}) for "${actorUsername}"`,
+    metadata: { credentialId },
+  });
+
+  return NextResponse.json({ success: true });
 }
 

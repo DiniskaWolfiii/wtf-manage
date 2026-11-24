@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { getExpectedAppOrigin } from '@/lib/csrf';
 import { buildKeycloakActionUrl } from '@/lib/keycloak';
 
 export async function GET(req: Request) {
@@ -28,8 +29,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Invalid action parameter' }, { status: 400 });
   }
 
-  const appUrl = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
-  const targetUrl = buildKeycloakActionUrl(action, new URL('/profile', appUrl).toString());
+  const appOrigin = getExpectedAppOrigin(req.url);
+  const targetUrl = buildKeycloakActionUrl(action, new URL('/profile', appOrigin).toString());
 
   return NextResponse.redirect(targetUrl);
 }

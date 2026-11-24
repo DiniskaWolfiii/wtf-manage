@@ -35,7 +35,11 @@ export function getSafeExternalUrl(rawUrl: string): string | null {
 }
 
 /**
- * Validate avatar URLs (allows https/http URLs or strict raster base64 data URLs).
+ * Validate avatar URLs:
+ * - Allows strict raster base64 data URLs (bounded length).
+ * - Requires HTTPS for external URLs (blocks http:, javascript:, vbscript:, data:text/html).
+ * - When `S3_PUBLIC_URL` (or `NEXT_PUBLIC_S3_PUBLIC_URL`) is configured, restricts external
+ *   avatar URLs strictly to that bucket origin/prefix to prevent third-party tracking pixels.
  */
 export function getSafeAvatarUrl(rawUrl?: string): string | null {
   if (!rawUrl) {
@@ -51,11 +55,60 @@ export function getSafeAvatarUrl(rawUrl?: string): string | null {
     }
     return SAFE_DATA_IMAGE_REGEX.test(trimmed) ? trimmed : null;
   }
-  return getSafeExternalUrl(trimmed);
+  if (trimmed.length > MAX_URL_LENGTH) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    const configuredBase =
+      (typeof process !== 'undefined'
+        ? process.env?.S3_PUBLIC_URL?.trim() || process.env?.NEXT_PUBLIC_S3_PUBLIC_URL?.trim()
+        : undefined) || null;
+
+    if (configuredBase) {
+      const baseParsed = new URL(configuredBase);
+      if (baseParsed.protocol !== 'https:') {
+        return null;
+      }
+      const normalizedBasePrefix = `${baseParsed.origin}${baseParsed.pathname.replace(/\/+$/, '')}/`;
+      const normalizedTarget = `${parsed.origin}${parsed.pathname}`;
+      if (!normalizedTarget.startsWith(normalizedBasePrefix)) {
+        return null;
+      }
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidCalendarDate(dateStr: string): boolean {
+  if (!ISO_DATE_REGEX.test(dateStr)) return false;
+  const [yearStr, monthStr, dayStr] = dateStr.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
 }
 
 const EDITABLE_PROFILE_STRING_FIELDS: Array<{
-  key: keyof Omit<UserProfileData, 'id' | 'username' | 'avatarUrl'>;
+  key: keyof Omit<UserProfileData, 'id' | 'username' | 'avatarUrl' | 'emailVerified'>;
   maxLength: number;
 }> = [
   { key: 'firstName', maxLength: 100 },
@@ -95,6 +148,12 @@ export function sanitizeProfileUpdate(body: unknown): Partial<UserProfileData> |
     }
     const trimmed = value.trim();
     if (trimmed.length > maxLength) {
+      return null;
+    }
+    if (key === 'email' && trimmed && !BASIC_EMAIL_REGEX.test(trimmed)) {
+      return null;
+    }
+    if (key === 'dob' && trimmed && !isValidCalendarDate(trimmed)) {
       return null;
     }
     sanitized[key] = trimmed;
@@ -256,4 +315,245 @@ export function sanitizeCrewAssignmentsPayload(
   }
 
   return clean;
+}
+
+const MAX_SKILL_NAME_LENGTH = 80;
+const MAX_SKILL_CATEGORY_LENGTH = 60;
+const MAX_SKILL_LEVEL_LENGTH = 40;
+const MAX_SKILL_LEVELS_COUNT = 20;
+const MAX_SKILLS_PER_USER = 40;
+
+/**
+ * Validate and trim a skill name (1-80 characters).
+ */
+export function sanitizeSkillName(raw: unknown): string | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > MAX_SKILL_NAME_LENGTH) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Validate and trim a skill category (1-60 characters, defaults to 'General' when empty).
+ */
+export function sanitizeSkillCategory(raw: unknown): string | null {
+  if (raw === undefined || raw === null) {
+    return 'General';
+  }
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return 'General';
+  }
+  if (trimmed.length > MAX_SKILL_CATEGORY_LENGTH) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Validate an array of skill levels (1-20 unique non-empty strings, max 40 chars each).
+ */
+export function sanitizeSkillLevels(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_SKILL_LEVELS_COUNT * 2) {
+    return null;
+  }
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') {
+      return null;
+    }
+    const trimmed = item.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed.length > MAX_SKILL_LEVEL_LENGTH) {
+      return null;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    clean.push(trimmed);
+    if (clean.length > MAX_SKILL_LEVELS_COUNT) {
+      return null;
+    }
+  }
+  if (clean.length === 0) {
+    return null;
+  }
+  return clean;
+}
+
+/**
+ * Validate a crew skills assignment payload (`{ skills: [{ skillId, level }] }`).
+ * Rejects duplicate skillIds.
+ */
+export function sanitizeCrewSkillsPayload(
+  body: unknown
+): Array<{ skillId: number; level: string }> | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return null;
+  }
+  const input = body as Record<string, unknown>;
+  if (!Array.isArray(input.skills) || input.skills.length > MAX_SKILLS_PER_USER) {
+    return null;
+  }
+
+  const seenSkills = new Set<number>();
+  const clean: Array<{ skillId: number; level: string }> = [];
+
+  for (const item of input.skills) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return null;
+    }
+    const raw = item as Record<string, unknown>;
+    if (
+      typeof raw.skillId !== 'number' ||
+      !Number.isInteger(raw.skillId) ||
+      raw.skillId <= 0
+    ) {
+      return null;
+    }
+    if (seenSkills.has(raw.skillId)) {
+      return null;
+    }
+    if (typeof raw.level !== 'string') {
+      return null;
+    }
+    const level = raw.level.trim();
+    if (!level || level.length > MAX_SKILL_LEVEL_LENGTH) {
+      return null;
+    }
+    seenSkills.add(raw.skillId);
+    clean.push({ skillId: raw.skillId, level });
+  }
+
+  return clean;
+}
+
+const VALID_CREW_STATUSES = new Set(['active', 'on_leave', 'offboarded']);
+const MAX_REASON_LENGTH = 255;
+const MAX_INTERNAL_NOTES_LENGTH = 4000;
+
+function parseOptionalDateString(val: unknown): string | null | undefined {
+  if (val === undefined) return undefined;
+  if (val === null || val === '') return null;
+  if (typeof val !== 'string') return undefined;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
+/**
+ * Validate a crew master-data update payload for FR.
+ */
+export function sanitizeCrewMasterDataPayload(body: unknown): {
+  status?: 'active' | 'on_leave' | 'offboarded';
+  joinedAt?: string | null;
+  offboardedAt?: string | null;
+  offboardReason?: string | null;
+  internalNotes?: string;
+  effectiveAt?: string | null;
+  eventNote?: string | null;
+} | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return null;
+  }
+  const input = body as Record<string, unknown>;
+  const out: {
+    status?: 'active' | 'on_leave' | 'offboarded';
+    joinedAt?: string | null;
+    offboardedAt?: string | null;
+    offboardReason?: string | null;
+    internalNotes?: string;
+    effectiveAt?: string | null;
+    eventNote?: string | null;
+  } = {};
+
+  if (input.status !== undefined) {
+    if (typeof input.status !== 'string' || !VALID_CREW_STATUSES.has(input.status)) {
+      return null;
+    }
+    out.status = input.status as 'active' | 'on_leave' | 'offboarded';
+  }
+
+  if (input.joinedAt !== undefined) {
+    const d = parseOptionalDateString(input.joinedAt);
+    if (d === undefined) return null;
+    out.joinedAt = d;
+  }
+
+  if (input.offboardedAt !== undefined) {
+    const d = parseOptionalDateString(input.offboardedAt);
+    if (d === undefined) return null;
+    out.offboardedAt = d;
+  }
+
+  if (input.effectiveAt !== undefined) {
+    const d = parseOptionalDateString(input.effectiveAt);
+    if (d === undefined) return null;
+    out.effectiveAt = d;
+  }
+
+  if (input.offboardReason !== undefined) {
+    if (input.offboardReason === null) {
+      out.offboardReason = null;
+    } else if (typeof input.offboardReason === 'string') {
+      const t = input.offboardReason.trim();
+      if (t.length > MAX_REASON_LENGTH) return null;
+      out.offboardReason = t || null;
+    } else {
+      return null;
+    }
+  }
+
+  if (input.eventNote !== undefined) {
+    if (input.eventNote === null) {
+      out.eventNote = null;
+    } else if (typeof input.eventNote === 'string') {
+      const t = input.eventNote.trim();
+      if (t.length > MAX_REASON_LENGTH) return null;
+      out.eventNote = t || null;
+    } else {
+      return null;
+    }
+  }
+
+  if (input.internalNotes !== undefined) {
+    if (typeof input.internalNotes !== 'string') return null;
+    if (input.internalNotes.length > MAX_INTERNAL_NOTES_LENGTH) return null;
+    out.internalNotes = input.internalNotes.trim();
+  }
+
+  if (Object.keys(out).length === 0) {
+    return null;
+  }
+
+  return out;
+}
+
+/**
+ * Validate optional `{ reason }` body on DELETE /api/fr/crew/[userId].
+ */
+export function sanitizeOffboardPayload(body: unknown): { reason: string | null } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { reason: null };
+  }
+  const raw = (body as Record<string, unknown>).reason;
+  if (typeof raw !== 'string') {
+    return { reason: null };
+  }
+  const trimmed = raw.trim().slice(0, MAX_REASON_LENGTH);
+  return { reason: trimmed || null };
 }

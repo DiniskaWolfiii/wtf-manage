@@ -1,5 +1,6 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import { ensureDatabaseExists, getPool } from '@/lib/db';
+import type { PortalPermission } from '@/lib/permission-types';
 import {
   DEFAULT_PORTAL_SETTINGS,
   type IdentityDisplayConfig,
@@ -118,6 +119,21 @@ export async function getPortalSettings(): Promise<PortalSettings> {
     console.error('[DB] Failed to load portal settings:', (err as Error).message);
     return DEFAULT_PORTAL_SETTINGS;
   }
+}
+
+/**
+ * Loads portal settings scoped to the caller's permissions.
+ * Internal Crew Quick Links are withheld from users without `crew.dashboard.view`
+ * or `admin.portal.manage`.
+ */
+export async function getPortalSettingsForPermissions(
+  permissions: PortalPermission[]
+): Promise<PortalSettings> {
+  const settings = await getPortalSettings();
+  const canViewQuickLinks =
+    permissions.includes('crew.dashboard.view') ||
+    permissions.includes('admin.portal.manage');
+  return canViewQuickLinks ? settings : { ...settings, quickLinks: [] };
 }
 
 /**

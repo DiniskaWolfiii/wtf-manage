@@ -306,6 +306,34 @@ export async function getDepartmentMemberIds(departmentId: number): Promise<stri
   return rows.map((r) => r.user_id);
 }
 
+/**
+ * Returns user IDs assigned to `departmentId` who are NOT assigned to any OTHER department
+ * that maps to the same `keycloakGroupId`. Prevents removing a shared Keycloak group
+ * still required by another department assignment.
+ */
+export async function getDepartmentMemberIdsExclusiveToGroup(
+  departmentId: number,
+  keycloakGroupId: string
+): Promise<string[]> {
+  await ensureCrewTables();
+  const pool = getPool();
+  const [rows] = await pool.execute<UserIdRow[]>(
+    `SELECT ca.user_id
+     FROM crew_assignments ca
+     WHERE ca.department_id = ?
+       AND NOT EXISTS (
+         SELECT 1
+         FROM crew_assignments ca2
+         INNER JOIN departments d2 ON d2.id = ca2.department_id
+         WHERE ca2.user_id = ca.user_id
+           AND ca2.department_id != ?
+           AND d2.keycloak_group_id = ?
+       )`,
+    [departmentId, departmentId, keycloakGroupId]
+  );
+  return rows.map((r) => r.user_id);
+}
+
 export async function getMappedGroupIdsForUser(userId: string): Promise<string[]> {
   await ensureCrewTables();
   const pool = getPool();

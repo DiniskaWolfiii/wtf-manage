@@ -671,7 +671,7 @@ export function FrCrewSection({
                           >
                             View Profile
                           </Button>
-                          {u.isCrew && (
+                          {isFrAdmin && u.isCrew && (
                             <>
                               <Button
                                 size="xs"

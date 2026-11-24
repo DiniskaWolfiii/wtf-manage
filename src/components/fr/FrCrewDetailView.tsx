@@ -691,7 +691,7 @@ export function FrCrewDetailView({
           </Group>
 
           <Group gap="sm" wrap="wrap">
-            {effectiveStatus !== 'offboarded' && crewProfile && (
+            {isFrAdmin && effectiveStatus !== 'offboarded' && crewProfile && (
               <Button
                 variant="default"
                 size="xs"
@@ -852,7 +852,7 @@ export function FrCrewDetailView({
                       <Select
                         label="Lifecycle Status"
                         size="xs"
-                        disabled={!crewProfile || effectiveStatus === 'offboarded'}
+                        disabled={!isFrAdmin || !crewProfile || effectiveStatus === 'offboarded'}
                         value={formStatus}
                         onChange={(val) =>
                           setFormStatus((val as CrewStatus) || 'active')
@@ -872,7 +872,7 @@ export function FrCrewDetailView({
                         label="Joined Date"
                         type="date"
                         size="xs"
-                        disabled={!crewProfile}
+                        disabled={!isFrAdmin || !crewProfile}
                         value={formJoinedAt}
                         onChange={(e) => setFormJoinedAt(e.currentTarget.value)}
                       />
@@ -882,7 +882,7 @@ export function FrCrewDetailView({
                         label="Offboarded Date"
                         type="date"
                         size="xs"
-                        disabled={!crewProfile}
+                        disabled={!isFrAdmin || !crewProfile}
                         value={formOffboardedAt}
                         onChange={(e) => setFormOffboardedAt(e.currentTarget.value)}
                       />
@@ -892,7 +892,7 @@ export function FrCrewDetailView({
                         label="Reason / Season Note"
                         placeholder="e.g. Sitting out Con 2026"
                         size="xs"
-                        disabled={!crewProfile}
+                        disabled={!isFrAdmin || !crewProfile}
                         value={formReason}
                         onChange={(e) => setFormReason(e.currentTarget.value)}
                       />
@@ -905,7 +905,7 @@ export function FrCrewDetailView({
                     size="xs"
                     minRows={3}
                     autosize
-                    disabled={!crewProfile}
+                    disabled={!isFrAdmin || !crewProfile}
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.currentTarget.value)}
                     styles={{
@@ -917,18 +917,20 @@ export function FrCrewDetailView({
                     }}
                   />
 
-                  <Group justify="flex-end">
-                    <Button
-                      type="submit"
-                      size="xs"
-                      color="cyan"
-                      leftSection={<IconCheck size={14} />}
-                      loading={savingMaster}
-                      disabled={!crewProfile}
-                    >
-                      Save Master Data
-                    </Button>
-                  </Group>
+                  {isFrAdmin && (
+                    <Group justify="flex-end">
+                      <Button
+                        type="submit"
+                        size="xs"
+                        color="cyan"
+                        leftSection={<IconCheck size={14} />}
+                        loading={savingMaster}
+                        disabled={!crewProfile}
+                      >
+                        Save Master Data
+                      </Button>
+                    </Group>
+                  )}
                 </Stack>
               </form>
             </Stack>
@@ -952,7 +954,7 @@ export function FrCrewDetailView({
                 <Text size="xs" fw={700} tt="uppercase" c="dimmed">
                   Departments &amp; Positions
                 </Text>
-                {isCrew && (
+                {isFrAdmin && isCrew && (
                   <Button
                     variant="default"
                     size="compact-xs"
@@ -1005,7 +1007,7 @@ export function FrCrewDetailView({
                 <Text size="xs" fw={700} tt="uppercase" c="dimmed">
                   Skills &amp; Qualifications
                 </Text>
-                {isCrew && (
+                {isFrAdmin && isCrew && (
                   <Button
                     variant="default"
                     size="compact-xs"

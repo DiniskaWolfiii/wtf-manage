@@ -3,7 +3,7 @@ import { recordAuditLog } from '@/lib/audit';
 import {
   deleteDepartment,
   getDepartmentById,
-  getDepartmentMemberIds,
+  getDepartmentMemberIdsExclusiveToGroup,
   updateDepartment,
   wouldCreateDepartmentCycle,
 } from '@/lib/crew';
@@ -139,7 +139,7 @@ export async function DELETE(
     }
 
     if (dept.keycloakGroupId) {
-      const memberIds = await getDepartmentMemberIds(id);
+      const memberIds = await getDepartmentMemberIdsExclusiveToGroup(id, dept.keycloakGroupId);
       for (const userId of memberIds) {
         const removed = await removeUserFromGroup(userId, dept.keycloakGroupId);
         if (!removed) {

@@ -1,3 +1,5 @@
+import { getSafeAvatarUrl } from '@/lib/validation';
+
 export interface KeycloakUserProfile {
   id: string;
   username: string;
@@ -14,6 +16,7 @@ export interface UserProfileData {
   firstName: string;
   lastName: string;
   email: string;
+  emailVerified?: boolean;
   nickname: string;
   telegram: string;
   species: string;
@@ -46,18 +49,31 @@ export interface SecurityStatus {
   }>;
 }
 
+const KEYCLOAK_FETCH_TIMEOUT_MS = 10_000;
+const USERS_LIST_CACHE_TTL_MS = 30_000;
+const MAX_KEYCLOAK_USER_PAGES = 100;
+
 let cachedAdminToken: { token: string; expiresAt: number } | null = null;
+let cachedUsersMinimal: { users: MinimalKeycloakUser[]; expiresAt: number } | null = null;
+let inFlightUsersMinimal: Promise<MinimalKeycloakUser[] | null> | null = null;
 
 function getKeycloakUrls() {
-  const issuer = process.env.KEYCLOAK_ISSUER || 'https://identity.winterfur.org/realms/winterfur-test';
+  const issuer = process.env.KEYCLOAK_ISSUER?.trim();
+  if (!issuer) {
+    throw new Error('[Keycloak] KEYCLOAK_ISSUER environment variable is not configured');
+  }
   const urlObj = new URL(issuer);
   const pathParts = urlObj.pathname.split('/').filter(Boolean);
   const realmIndex = pathParts.indexOf('realms');
-  const realm = realmIndex !== -1 && pathParts[realmIndex + 1] ? pathParts[realmIndex + 1] : 'winterfur-test';
-  const baseUrl = `${urlObj.origin}${urlObj.pathname.substring(0, urlObj.pathname.indexOf('/realms'))}`;
+  const realm = realmIndex !== -1 && pathParts[realmIndex + 1] ? pathParts[realmIndex + 1] : null;
+  if (!realm) {
+    throw new Error('[Keycloak] KEYCLOAK_ISSUER must include /realms/<realm>');
+  }
+  const realmsPos = urlObj.pathname.indexOf('/realms');
+  const baseUrl = `${urlObj.origin}${realmsPos >= 0 ? urlObj.pathname.substring(0, realmsPos) : ''}`;
 
   return {
-    issuer,
+    issuer: issuer.replace(/\/+$/, ''),
     baseUrl: baseUrl || urlObj.origin,
     realm,
   };
@@ -69,9 +85,16 @@ function getKeycloakUrls() {
 async function getAdminToken(): Promise<string | null> {
   const clientId = process.env.KEYCLOAK_CLIENT_ID;
   const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET;
-  const { issuer } = getKeycloakUrls();
 
   if (!clientId || !clientSecret) {
+    return null;
+  }
+
+  let issuer: string;
+  try {
+    ({ issuer } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
     return null;
   }
 
@@ -94,6 +117,7 @@ async function getAdminToken(): Promise<string | null> {
         client_secret: clientSecret,
       }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -125,7 +149,16 @@ export async function fetchKeycloakUser(userId: string, userAccessToken?: string
     return null;
   }
 
-  const { baseUrl, realm, issuer } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  let issuer: string;
+  try {
+    ({ baseUrl, realm, issuer } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return null;
+  }
+
   const adminToken = await getAdminToken();
 
   // Try Admin REST API first if adminToken is available
@@ -137,6 +170,7 @@ export async function fetchKeycloakUser(userId: string, userAccessToken?: string
           Authorization: `Bearer ${adminToken}`,
         },
         cache: 'no-store',
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       });
 
       if (res.ok) {
@@ -161,6 +195,7 @@ export async function fetchKeycloakUser(userId: string, userAccessToken?: string
           Accept: 'application/json',
         },
         cache: 'no-store',
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       });
 
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
@@ -187,7 +222,16 @@ export async function updateKeycloakUser(
     return false;
   }
 
-  const { baseUrl, realm, issuer } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  let issuer: string;
+  try {
+    ({ baseUrl, realm, issuer } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return false;
+  }
+
   const adminToken = await getAdminToken();
 
   const attributesPayload: Record<string, string[]> = {};
@@ -211,6 +255,7 @@ export async function updateKeycloakUser(
       const existingRes = await fetch(userEndpoint, {
         headers: { Authorization: `Bearer ${adminToken}` },
         cache: 'no-store',
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       });
       if (!existingRes.ok) {
         if (existingRes.status === 401) {
@@ -221,11 +266,15 @@ export async function updateKeycloakUser(
       }
       const existingData = await existingRes.json();
 
+      const emailChanged =
+        typeof updated.email === 'string' &&
+        updated.email.trim().toLowerCase() !== String(existingData.email ?? '').trim().toLowerCase();
+
       const body: Record<string, unknown> = {
         firstName: updated.firstName ?? existingData.firstName,
         lastName: updated.lastName ?? existingData.lastName,
         email: updated.email ?? existingData.email,
-        ...(updated.email && updated.email !== existingData.email ? { emailVerified: false } : {}),
+        ...(emailChanged ? { emailVerified: false } : {}),
         attributes: {
           ...(existingData.attributes || {}),
           ...attributesPayload,
@@ -239,9 +288,13 @@ export async function updateKeycloakUser(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       });
 
-      if (putRes.ok) return true;
+      if (putRes.ok) {
+        cachedUsersMinimal = null;
+        return true;
+      }
       if (putRes.status === 401) {
         cachedAdminToken = null;
       }
@@ -267,6 +320,7 @@ export async function updateKeycloakUser(
           lastName: updated.lastName,
           attributes: attributesPayload,
         }),
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       });
 
       if (res.ok) return true;
@@ -276,6 +330,109 @@ export async function updateKeycloakUser(
   }
 
   return false;
+}
+
+/**
+ * Trigger a Keycloak `VERIFY_EMAIL` verification email for a user via Admin API.
+ */
+export async function sendKeycloakVerifyEmail(
+  userId: string,
+  redirectUri?: string
+): Promise<boolean> {
+  if (!isSafePathSegment(userId)) {
+    return false;
+  }
+
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return false;
+  }
+
+  const adminToken = await getAdminToken();
+  if (!adminToken) {
+    return false;
+  }
+
+  const endpoint = new URL(
+    `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/execute-actions-email`
+  );
+  const clientId = process.env.KEYCLOAK_CLIENT_ID?.trim();
+  if (clientId && redirectUri) {
+    endpoint.searchParams.set('client_id', clientId);
+    endpoint.searchParams.set('redirect_uri', redirectUri);
+  }
+
+  try {
+    const res = await fetch(endpoint.toString(), {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(['VERIFY_EMAIL']),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
+    });
+
+    if (res.status === 401) {
+      cachedAdminToken = null;
+    }
+    if (!res.ok) {
+      console.warn(`[Keycloak] execute-actions-email (VERIFY_EMAIL) returned status: ${res.status}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[Keycloak] Error sending verify email:', err);
+    return false;
+  }
+}
+
+/**
+ * Terminate all active Keycloak SSO sessions for a user (used on Crew offboarding).
+ */
+export async function logoutKeycloakUser(userId: string): Promise<boolean> {
+  if (!isSafePathSegment(userId)) {
+    return false;
+  }
+
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return false;
+  }
+
+  const adminToken = await getAdminToken();
+  if (!adminToken) {
+    return false;
+  }
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/logout`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
+      }
+    );
+
+    if (res.status === 401) {
+      cachedAdminToken = null;
+    }
+    return res.ok || res.status === 204;
+  } catch (err) {
+    console.error('[Keycloak] Error revoking user sessions:', err);
+    return false;
+  }
 }
 
 function mapKeycloakToProfile(data: KeycloakUserProfile): UserProfileData {
@@ -289,6 +446,7 @@ function mapKeycloakToProfile(data: KeycloakUserProfile): UserProfileData {
     firstName: data.firstName || '',
     lastName: data.lastName || '',
     email: data.email || '',
+    emailVerified: Boolean(data.emailVerified),
     nickname: getAttr('nickname') || data.username || '',
     telegram: getAttr('telegram'),
     species: getAttr('species') || 'Other',
@@ -299,17 +457,56 @@ function mapKeycloakToProfile(data: KeycloakUserProfile): UserProfileData {
     city: getAttr('city') || '',
     country: getAttr('country') || 'Germany',
     dob: getAttr('dob') || '',
-    avatarUrl: getAttr('avatarUrl') || '',
+    avatarUrl: getSafeAvatarUrl(getAttr('avatarUrl')) || '',
   };
+}
+
+const PASSKEY_CREDENTIAL_TYPES = new Set(['webauthn', 'webauthn-passwordless']);
+
+async function fetchRawUserCredentials(userId: string): Promise<KeycloakCredential[] | null> {
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return null;
+  }
+
+  const adminToken = await getAdminToken();
+  if (!adminToken || !isSafePathSegment(userId)) {
+    return null;
+  }
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/credentials`,
+      {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
+      }
+    );
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        cachedAdminToken = null;
+      }
+      console.warn(`[Keycloak] Fetch credentials status: ${res.status}`);
+      return null;
+    }
+
+    return (await res.json()) as KeycloakCredential[];
+  } catch (err) {
+    console.error('[Keycloak] Error fetching credentials:', err);
+    return null;
+  }
 }
 
 /**
  * Fetch credentials (passwords, OTP, WebAuthn) for a user from Keycloak Admin API.
  */
 export async function fetchUserCredentials(userId: string): Promise<SecurityStatus> {
-  const { baseUrl, realm } = getKeycloakUrls();
-  const adminToken = await getAdminToken();
-
   const fallback: SecurityStatus = {
     hasPassword: true,
     passwordUpdated: 'Configured',
@@ -317,68 +514,77 @@ export async function fetchUserCredentials(userId: string): Promise<SecurityStat
     passkeys: [],
   };
 
-  if (!adminToken || !isSafePathSegment(userId)) return fallback;
+  const creds = await fetchRawUserCredentials(userId);
+  if (!creds) {
+    return fallback;
+  }
 
-  try {
-    const res = await fetch(`${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/credentials`, {
-      headers: { Authorization: `Bearer ${adminToken}` },
-      cache: 'no-store',
-    });
+  const passwordCred = creds.find((c) => c.type === 'password');
+  const otpCred = creds.find((c) => c.type === 'otp');
+  const passkeyCreds = creds.filter((c) => PASSKEY_CREDENTIAL_TYPES.has(c.type));
 
-    if (!res.ok) {
-      if (res.status === 401) {
-        cachedAdminToken = null;
-      }
-      console.warn(`[Keycloak] Fetch credentials status: ${res.status}`);
-      return fallback;
-    }
-
-    const creds: KeycloakCredential[] = await res.json();
-
-    const passwordCred = creds.find((c) => c.type === 'password');
-    const otpCred = creds.find((c) => c.type === 'otp');
-    const passkeyCreds = creds.filter(
-      (c) => c.type === 'webauthn' || c.type === 'webauthn-passwordless'
-    );
-
-    return {
-      hasPassword: !!passwordCred,
-      passwordUpdated: passwordCred?.createdDate
-        ? new Date(passwordCred.createdDate).toLocaleDateString('en-US', {
+  return {
+    hasPassword: !!passwordCred,
+    passwordUpdated: passwordCred?.createdDate
+      ? new Date(passwordCred.createdDate).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        })
+      : 'Configured',
+    hasTotp: !!otpCred,
+    totpLabel: otpCred?.userLabel || 'Authenticator App',
+    passkeys: passkeyCreds.map((p) => ({
+      id: p.id,
+      name: p.userLabel || 'WebAuthn Passkey',
+      date: p.createdDate
+        ? new Date(p.createdDate).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric',
           })
-        : 'Configured',
-      hasTotp: !!otpCred,
-      totpLabel: otpCred?.userLabel || 'Authenticator App',
-      passkeys: passkeyCreds.map((p) => ({
-        id: p.id,
-        name: p.userLabel || 'WebAuthn Passkey',
-        date: p.createdDate
-          ? new Date(p.createdDate).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            })
-          : 'Registered',
-      })),
-    };
-  } catch (err) {
-    console.error('[Keycloak] Error fetching credentials:', err);
-    return fallback;
-  }
+        : 'Registered',
+    })),
+  };
 }
 
 /**
- * Delete a specific credential (e.g. remove a Passkey) in Keycloak.
+ * Delete a WebAuthn passkey credential for a user after verifying ownership and credential type.
+ * Refuses to delete password or TOTP (OTP) credentials through this self-service endpoint.
  */
-export async function deleteUserCredential(userId: string, credentialId: string): Promise<boolean> {
-  const { baseUrl, realm } = getKeycloakUrls();
-  const adminToken = await getAdminToken();
+export async function deleteUserPasskeyCredential(
+  userId: string,
+  credentialId: string
+): Promise<'deleted' | 'forbidden' | 'not_found' | 'error'> {
+  if (!isSafePathSegment(userId) || !isSafePathSegment(credentialId)) {
+    return 'error';
+  }
 
-  if (!adminToken || !isSafePathSegment(userId) || !isSafePathSegment(credentialId)) {
-    return false;
+  const creds = await fetchRawUserCredentials(userId);
+  if (!creds) {
+    return 'error';
+  }
+
+  const target = creds.find((c) => c.id === credentialId);
+  if (!target) {
+    return 'not_found';
+  }
+  if (!PASSKEY_CREDENTIAL_TYPES.has(target.type)) {
+    return 'forbidden';
+  }
+
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return 'error';
+  }
+
+  const adminToken = await getAdminToken();
+  if (!adminToken) {
+    return 'error';
   }
 
   try {
@@ -387,6 +593,7 @@ export async function deleteUserCredential(userId: string, credentialId: string)
       {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${adminToken}` },
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       }
     );
 
@@ -394,10 +601,10 @@ export async function deleteUserCredential(userId: string, credentialId: string)
       cachedAdminToken = null;
     }
 
-    return res.ok || res.status === 204;
+    return res.ok || res.status === 204 ? 'deleted' : 'error';
   } catch (err) {
-    console.error('[Keycloak] Error deleting credential:', err);
-    return false;
+    console.error('[Keycloak] Error deleting passkey credential:', err);
+    return 'error';
   }
 }
 
@@ -441,64 +648,101 @@ export interface KeycloakGroupSummary {
 /**
  * List all Keycloak realm users with strictly minimal fields (id, username, avatarUrl)
  * for FR crew promotion without exposing personal profile details.
+ * Uses short-lived caching and in-flight deduplication to avoid Keycloak amplification.
  */
-export async function listKeycloakUsersMinimal(): Promise<MinimalKeycloakUser[] | null> {
-  const { baseUrl, realm } = getKeycloakUrls();
-  const adminToken = await getAdminToken();
-  if (!adminToken) {
-    return null;
+export async function listKeycloakUsersMinimal(
+  options?: { bypassCache?: boolean }
+): Promise<MinimalKeycloakUser[] | null> {
+  const now = Date.now();
+  if (!options?.bypassCache && cachedUsersMinimal && cachedUsersMinimal.expiresAt > now) {
+    return cachedUsersMinimal.users;
+  }
+  if (!options?.bypassCache && inFlightUsersMinimal) {
+    return inFlightUsersMinimal;
   }
 
-  const users: MinimalKeycloakUser[] = [];
-  const pageSize = 100;
-  let first = 0;
-
-  try {
-    while (true) {
-      const res = await fetch(
-        `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users?first=${first}&max=${pageSize}&briefRepresentation=false`,
-        {
-          headers: { Authorization: `Bearer ${adminToken}` },
-          cache: 'no-store',
-        }
-      );
-
-      if (res.status === 401) {
-        cachedAdminToken = null;
-        return null;
-      }
-      if (!res.ok) {
-        console.warn(`[Keycloak] Failed to list users: ${res.status}`);
-        return null;
-      }
-
-      const batch = (await res.json()) as Array<{
-        id?: string;
-        username?: string;
-        attributes?: Record<string, string[]>;
-      }>;
-
-      for (const u of batch) {
-        if (!u.id || !u.username) continue;
-        const rawAvatar = u.attributes?.avatarUrl?.[0];
-        users.push({
-          id: u.id,
-          username: u.username,
-          avatarUrl: rawAvatar && rawAvatar.trim() ? rawAvatar.trim() : undefined,
-        });
-      }
-
-      if (batch.length < pageSize) {
-        break;
-      }
-      first += pageSize;
+  const loader = (async (): Promise<MinimalKeycloakUser[] | null> => {
+    let baseUrl: string;
+    let realm: string;
+    try {
+      ({ baseUrl, realm } = getKeycloakUrls());
+    } catch (err) {
+      console.error((err as Error).message);
+      return null;
     }
 
-    return users.sort((a, b) => a.username.localeCompare(b.username));
-  } catch (err) {
-    console.error('[Keycloak] Error listing users:', err);
-    return null;
+    const adminToken = await getAdminToken();
+    if (!adminToken) {
+      return null;
+    }
+
+    const users: MinimalKeycloakUser[] = [];
+    const pageSize = 100;
+    let first = 0;
+
+    try {
+      for (let page = 0; page < MAX_KEYCLOAK_USER_PAGES; page++) {
+        const res = await fetch(
+          `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users?first=${first}&max=${pageSize}&briefRepresentation=false`,
+          {
+            headers: { Authorization: `Bearer ${adminToken}` },
+            cache: 'no-store',
+            signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
+          }
+        );
+
+        if (res.status === 401) {
+          cachedAdminToken = null;
+          return null;
+        }
+        if (!res.ok) {
+          console.warn(`[Keycloak] Failed to list users: ${res.status}`);
+          return null;
+        }
+
+        const batch = (await res.json()) as Array<{
+          id?: string;
+          username?: string;
+          attributes?: Record<string, string[]>;
+        }>;
+
+        for (const u of batch) {
+          if (!u.id || !u.username) continue;
+          const rawAvatar = u.attributes?.avatarUrl?.[0];
+          const safeAvatar = getSafeAvatarUrl(rawAvatar) ?? undefined;
+          users.push({
+            id: u.id,
+            username: u.username,
+            avatarUrl: safeAvatar,
+          });
+        }
+
+        if (batch.length < pageSize) {
+          break;
+        }
+        first += pageSize;
+      }
+
+      const sorted = users.sort((a, b) => a.username.localeCompare(b.username));
+      cachedUsersMinimal = {
+        users: sorted,
+        expiresAt: Date.now() + USERS_LIST_CACHE_TTL_MS,
+      };
+      return sorted;
+    } catch (err) {
+      console.error('[Keycloak] Error listing users:', err);
+      return null;
+    }
+  })().finally(() => {
+    if (inFlightUsersMinimal === loader) {
+      inFlightUsersMinimal = null;
+    }
+  });
+
+  if (!options?.bypassCache) {
+    inFlightUsersMinimal = loader;
   }
+  return loader;
 }
 
 interface RawKeycloakGroup {
@@ -528,7 +772,15 @@ function flattenKeycloakGroups(groups: RawKeycloakGroup[], out: KeycloakGroupSum
  * List all Keycloak realm groups (flattened, including subgroups).
  */
 export async function listKeycloakGroups(): Promise<KeycloakGroupSummary[] | null> {
-  const { baseUrl, realm } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return null;
+  }
+
   const adminToken = await getAdminToken();
   if (!adminToken) {
     return null;
@@ -540,6 +792,7 @@ export async function listKeycloakGroups(): Promise<KeycloakGroupSummary[] | nul
       {
         headers: { Authorization: `Bearer ${adminToken}` },
         cache: 'no-store',
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       }
     );
 
@@ -561,7 +814,7 @@ export async function listKeycloakGroups(): Promise<KeycloakGroupSummary[] | nul
 }
 
 /**
- * Find a Keycloak group by normalized path (e.g. `wtf-crew` or `departments/crew`) or exact name.
+ * Find a Keycloak group by exact normalized path (preferred) or top-level name fallback.
  */
 export async function getKeycloakGroupByName(groupIdentifier: string): Promise<KeycloakGroupSummary | null> {
   const groups = await listKeycloakGroups();
@@ -569,18 +822,32 @@ export async function getKeycloakGroupByName(groupIdentifier: string): Promise<K
     return null;
   }
   const normalized = groupIdentifier.trim().replace(/^\/+|\/+$/g, '');
-  return (
-    groups.find(
-      (g) => g.path.replace(/^\/+|\/+$/g, '') === normalized || g.name === normalized
-    ) ?? null
-  );
+  if (!normalized) {
+    return null;
+  }
+  // Prefer exact normalized full-path match to avoid subgroup name collisions
+  const exactPathMatch = groups.find((g) => g.path.replace(/^\/+|\/+$/g, '') === normalized);
+  if (exactPathMatch) {
+    return exactPathMatch;
+  }
+  // Fallback: match by exact name only if unique across the realm
+  const nameMatches = groups.filter((g) => g.name === normalized);
+  return nameMatches.length === 1 ? nameMatches[0] : null;
 }
 
 /**
  * Fetch the set of Keycloak user IDs belonging to a specific group.
  */
 export async function getGroupMemberIds(groupId: string): Promise<Set<string> | null> {
-  const { baseUrl, realm } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return null;
+  }
+
   const adminToken = await getAdminToken();
   if (!adminToken || !isSafePathSegment(groupId)) {
     return null;
@@ -591,12 +858,13 @@ export async function getGroupMemberIds(groupId: string): Promise<Set<string> | 
   let first = 0;
 
   try {
-    while (true) {
+    for (let page = 0; page < MAX_KEYCLOAK_USER_PAGES; page++) {
       const res = await fetch(
         `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/groups/${encodeURIComponent(groupId)}/members?first=${first}&max=${pageSize}`,
         {
           headers: { Authorization: `Bearer ${adminToken}` },
           cache: 'no-store',
+          signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
         }
       );
 
@@ -633,7 +901,15 @@ export async function getGroupMemberIds(groupId: string): Promise<Set<string> | 
  * Add a Keycloak user to a group.
  */
 export async function addUserToGroup(userId: string, groupId: string): Promise<boolean> {
-  const { baseUrl, realm } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return false;
+  }
+
   const adminToken = await getAdminToken();
   if (!adminToken || !isSafePathSegment(userId) || !isSafePathSegment(groupId)) {
     return false;
@@ -645,6 +921,7 @@ export async function addUserToGroup(userId: string, groupId: string): Promise<b
       {
         method: 'PUT',
         headers: { Authorization: `Bearer ${adminToken}` },
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       }
     );
 
@@ -662,7 +939,15 @@ export async function addUserToGroup(userId: string, groupId: string): Promise<b
  * Remove a Keycloak user from a group.
  */
 export async function removeUserFromGroup(userId: string, groupId: string): Promise<boolean> {
-  const { baseUrl, realm } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return false;
+  }
+
   const adminToken = await getAdminToken();
   if (!adminToken || !isSafePathSegment(userId) || !isSafePathSegment(groupId)) {
     return false;
@@ -674,6 +959,7 @@ export async function removeUserFromGroup(userId: string, groupId: string): Prom
       {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${adminToken}` },
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       }
     );
 
@@ -692,7 +978,15 @@ export async function removeUserFromGroup(userId: string, groupId: string): Prom
  * for a specific user via the Keycloak Admin API.
  */
 export async function fetchUserKeycloakGroups(userId: string): Promise<string[] | null> {
-  const { baseUrl, realm } = getKeycloakUrls();
+  let baseUrl: string;
+  let realm: string;
+  try {
+    ({ baseUrl, realm } = getKeycloakUrls());
+  } catch (err) {
+    console.error((err as Error).message);
+    return null;
+  }
+
   const adminToken = await getAdminToken();
   if (!adminToken || !isSafePathSegment(userId)) {
     return null;
@@ -704,7 +998,7 @@ export async function fetchUserKeycloakGroups(userId: string): Promise<string[] 
       {
         headers: { Authorization: `Bearer ${adminToken}` },
         cache: 'no-store',
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(KEYCLOAK_FETCH_TIMEOUT_MS),
       }
     );
 
@@ -728,5 +1022,3 @@ export async function fetchUserKeycloakGroups(userId: string): Promise<string[] 
     return null;
   }
 }
-
-

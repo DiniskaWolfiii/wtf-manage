@@ -8,8 +8,6 @@ import {
   sanitizeSkillName,
 } from '@/lib/validation';
 
-const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
-
 function parseSkillId(rawId: string): number | null {
   if (!/^\d+$/.test(rawId)) return null;
   const parsed = Number(rawId);

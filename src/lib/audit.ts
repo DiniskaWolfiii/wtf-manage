@@ -22,6 +22,7 @@ export type AuditAction =
   | 'permissions.updated'
   | 'profile.updated'
   | 'profile.avatar_updated'
+  | 'profile.email_verification_sent'
   | 'profile.passkey_deleted';
 
 export interface RecordAuditLogInput {

@@ -35,7 +35,11 @@ export function getSafeExternalUrl(rawUrl: string): string | null {
 }
 
 /**
- * Validate avatar URLs (allows https/http URLs or strict raster base64 data URLs).
+ * Validate avatar URLs:
+ * - Allows strict raster base64 data URLs (bounded length).
+ * - Requires HTTPS for external URLs (blocks http:, javascript:, vbscript:, data:text/html).
+ * - When `S3_PUBLIC_URL` (or `NEXT_PUBLIC_S3_PUBLIC_URL`) is configured, restricts external
+ *   avatar URLs strictly to that bucket origin/prefix to prevent third-party tracking pixels.
  */
 export function getSafeAvatarUrl(rawUrl?: string): string | null {
   if (!rawUrl) {
@@ -51,11 +55,60 @@ export function getSafeAvatarUrl(rawUrl?: string): string | null {
     }
     return SAFE_DATA_IMAGE_REGEX.test(trimmed) ? trimmed : null;
   }
-  return getSafeExternalUrl(trimmed);
+  if (trimmed.length > MAX_URL_LENGTH) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    const configuredBase =
+      (typeof process !== 'undefined'
+        ? process.env?.S3_PUBLIC_URL?.trim() || process.env?.NEXT_PUBLIC_S3_PUBLIC_URL?.trim()
+        : undefined) || null;
+
+    if (configuredBase) {
+      const baseParsed = new URL(configuredBase);
+      if (baseParsed.protocol !== 'https:') {
+        return null;
+      }
+      const normalizedBasePrefix = `${baseParsed.origin}${baseParsed.pathname.replace(/\/+$/, '')}/`;
+      const normalizedTarget = `${parsed.origin}${parsed.pathname}`;
+      if (!normalizedTarget.startsWith(normalizedBasePrefix)) {
+        return null;
+      }
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidCalendarDate(dateStr: string): boolean {
+  if (!ISO_DATE_REGEX.test(dateStr)) return false;
+  const [yearStr, monthStr, dayStr] = dateStr.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
 }
 
 const EDITABLE_PROFILE_STRING_FIELDS: Array<{
-  key: keyof Omit<UserProfileData, 'id' | 'username' | 'avatarUrl'>;
+  key: keyof Omit<UserProfileData, 'id' | 'username' | 'avatarUrl' | 'emailVerified'>;
   maxLength: number;
 }> = [
   { key: 'firstName', maxLength: 100 },
@@ -95,6 +148,12 @@ export function sanitizeProfileUpdate(body: unknown): Partial<UserProfileData> |
     }
     const trimmed = value.trim();
     if (trimmed.length > maxLength) {
+      return null;
+    }
+    if (key === 'email' && trimmed && !BASIC_EMAIL_REGEX.test(trimmed)) {
+      return null;
+    }
+    if (key === 'dob' && trimmed && !isValidCalendarDate(trimmed)) {
       return null;
     }
     sanitized[key] = trimmed;

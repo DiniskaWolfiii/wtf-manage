@@ -18,11 +18,14 @@ import {
 import {
   addUserToGroup,
   fetchKeycloakUser,
+  fetchUserKeycloakGroups,
   getGroupMemberIds,
   getKeycloakGroupByName,
+  listKeycloakGroups,
+  logoutKeycloakUser,
   removeUserFromGroup,
 } from '@/lib/keycloak';
-import { getCrewOnboardingGroup } from '@/lib/permissions';
+import { getCrewOnboardingGroup, isPrivilegedPortalGroup } from '@/lib/permissions';
 import { requireSessionPermission } from '@/lib/server-auth';
 import {
   deleteAllUserCrewSkills,
@@ -176,6 +179,8 @@ export async function GET(
           avatarUrl: masterProfile!.avatarUrl,
         };
 
+    const isPortalAdmin = authResult.permissions.includes('admin.portal.manage');
+
     return NextResponse.json({
       isCrew,
       isFrAdmin: authResult.permissions.includes('fr.crew.manage'),
@@ -184,7 +189,10 @@ export async function GET(
       lifecycleEvents,
       roles,
       skills,
-      departments,
+      departments: departments.map((d) => ({
+        ...d,
+        keycloakGroupId: isPortalAdmin ? d.keycloakGroupId : null,
+      })),
       skillsCatalog,
     });
   } catch (err) {
@@ -225,6 +233,13 @@ export async function POST(
       return NextResponse.json(
         { error: `Keycloak group "${crewGroupIdentifier}" was not found` },
         { status: 500 }
+      );
+    }
+
+    if (await isPrivilegedPortalGroup([crewGroup.path, crewGroup.name, crewGroupIdentifier])) {
+      return NextResponse.json(
+        { error: 'Crew onboarding group cannot be a privileged admin group' },
+        { status: 403 }
       );
     }
 
@@ -343,10 +358,62 @@ export async function PUT(
 
     const previousGroupIds = new Set(await getMappedGroupIdsForUser(userId));
     const nextGroupIds = new Set<string>();
+    const newlyAddedDepartments: Array<{ keycloakGroupId: string; keycloakGroupName: string | null }> = [];
     for (const item of assignments) {
       const dept = deptMap.get(item.departmentId);
       if (dept?.keycloakGroupId) {
         nextGroupIds.add(dept.keycloakGroupId);
+        if (!previousGroupIds.has(dept.keycloakGroupId)) {
+          newlyAddedDepartments.push({
+            keycloakGroupId: dept.keycloakGroupId,
+            keycloakGroupName: dept.keycloakGroupName,
+          });
+        }
+      }
+    }
+
+    const isPortalAdmin = authResult.permissions.includes('admin.portal.manage');
+
+    // Anti-privilege-escalation checks:
+    // 1. Non-portal-admin FR managers can onboard OTHER crew into operational departments
+    //    (e.g. IT, Accounting), but cannot add themselves to new Keycloak-mapped departments.
+    // 2. Privileged admin Keycloak groups can never be assigned via FR Crew Management (fail-closed).
+    if (newlyAddedDepartments.length > 0) {
+      if (!isPortalAdmin && userId === authResult.userId) {
+        return NextResponse.json(
+          { error: 'You cannot assign yourself to new Keycloak-mapped departments' },
+          { status: 403 }
+        );
+      }
+
+      const kcGroups = await listKeycloakGroups();
+      if (!kcGroups) {
+        return NextResponse.json(
+          { error: 'Failed to verify target Keycloak groups' },
+          { status: 502 }
+        );
+      }
+      const kcGroupById = new Map(kcGroups.map((g) => [g.id, g]));
+
+      for (const entry of newlyAddedDepartments) {
+        const kcGroup = kcGroupById.get(entry.keycloakGroupId);
+        if (!kcGroup) {
+          return NextResponse.json(
+            { error: 'Unable to verify target Keycloak group' },
+            { status: 502 }
+          );
+        }
+        const candidates = [
+          kcGroup.path,
+          kcGroup.name,
+          entry.keycloakGroupName ?? '',
+        ].filter(Boolean);
+        if (await isPrivilegedPortalGroup(candidates)) {
+          return NextResponse.json(
+            { error: 'Privileged admin Keycloak groups cannot be assigned via FR Crew Management' },
+            { status: 403 }
+          );
+        }
       }
     }
 
@@ -606,6 +673,37 @@ export async function DELETE(
       );
     }
 
+    const crewMembers = await getGroupMemberIds(crewGroup.id);
+    if (!crewMembers) {
+      return NextResponse.json(
+        { error: 'Failed to verify active Crew membership in Keycloak' },
+        { status: 502 }
+      );
+    }
+    if (!crewMembers.has(userId)) {
+      return NextResponse.json(
+        { error: 'User is not currently an active Crew member' },
+        { status: 400 }
+      );
+    }
+
+    const isPortalAdmin = authResult.permissions.includes('admin.portal.manage');
+    if (!isPortalAdmin) {
+      const targetGroups = await fetchUserKeycloakGroups(userId);
+      if (!targetGroups) {
+        return NextResponse.json(
+          { error: 'Failed to verify target user permissions in Keycloak' },
+          { status: 502 }
+        );
+      }
+      if (await isPrivilegedPortalGroup(targetGroups)) {
+        return NextResponse.json(
+          { error: 'Privileged portal administrators can only be offboarded by an administrator' },
+          { status: 403 }
+        );
+      }
+    }
+
     const removedCrew = await removeUserFromGroup(userId, crewGroup.id);
     if (!removedCrew) {
       return NextResponse.json(
@@ -624,6 +722,12 @@ export async function DELETE(
       }
     }
 
+    // Immediately terminate active Keycloak SSO sessions so revoked crew permissions take effect right away
+    const sessionsRevoked = await logoutKeycloakUser(userId);
+    if (!sessionsRevoked) {
+      console.warn(`[API] DELETE /api/fr/crew/${userId}: failed to revoke Keycloak SSO sessions`);
+    }
+
     const targetProfile = await fetchKeycloakUser(userId);
     const targetLabel = targetProfile?.username || userId;
 
@@ -636,6 +740,7 @@ export async function DELETE(
         actorUsername: authResult.username,
         metadata: {
           removedMappedGroupCount: mappedGroupIds.length,
+          sessionsRevoked,
           previousRoles: previousRoles.map((r) => ({
             departmentName: r.departmentName,
             position: r.position,
@@ -653,9 +758,10 @@ export async function DELETE(
       targetType: 'user',
       targetId: userId,
       targetLabel,
-      summary: `Offboarded "${targetLabel}" from Crew (removed wtf-crew & assignments)`,
+      summary: `Offboarded "${targetLabel}" from Crew (removed wtf-crew, assignments & SSO sessions)`,
       metadata: {
         removedMappedGroupCount: mappedGroupIds.length,
+        sessionsRevoked,
         reason,
       },
     });

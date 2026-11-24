@@ -10,6 +10,7 @@ import {
   getConfiguredAdminGroup,
   getCrewOnboardingGroup,
   getPermissionMappings,
+  isPrivilegedPortalGroup,
   updateCrewOnboardingGroup,
   updatePermissionMappings,
 } from '@/lib/permissions';
@@ -84,6 +85,43 @@ export async function PUT(request: Request) {
       getPermissionMappings(),
       getCrewOnboardingGroup(),
     ]);
+
+    const candidateMappings = {
+      ...previousMappings,
+      ...sanitizedInput,
+    };
+    const effectiveCrewGroup =
+      rawBody.crewGroup !== undefined ? (rawBody.crewGroup as string | null) : previousCrewGroup;
+
+    if (effectiveCrewGroup) {
+      const kcGroups = await listKeycloakGroups();
+      if (!kcGroups && rawBody.crewGroup !== undefined) {
+        return NextResponse.json(
+          { error: 'Failed to verify crew onboarding group against Keycloak' },
+          { status: 502 }
+        );
+      }
+
+      const normalizedEffective = effectiveCrewGroup.trim().replace(/^\/+|\/+$/g, '');
+      const exactPathMatch = kcGroups?.find(
+        (g) => g.path.replace(/^\/+|\/+$/g, '') === normalizedEffective
+      );
+      const nameMatches = kcGroups?.filter((g) => g.name === normalizedEffective) ?? [];
+      const resolvedCrewGroup =
+        exactPathMatch ?? (nameMatches.length === 1 ? nameMatches[0] : null);
+
+      const candidates = [
+        effectiveCrewGroup,
+        ...(resolvedCrewGroup ? [resolvedCrewGroup.path, resolvedCrewGroup.name] : []),
+      ];
+
+      if (await isPrivilegedPortalGroup(candidates, candidateMappings)) {
+        return NextResponse.json(
+          { error: 'Crew onboarding group cannot be a privileged admin group' },
+          { status: 400 }
+        );
+      }
+    }
 
     const updatedMappings = await updatePermissionMappings(sanitizedInput);
     const updatedCrewGroup =

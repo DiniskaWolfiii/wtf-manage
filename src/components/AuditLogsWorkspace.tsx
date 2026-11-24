@@ -73,9 +73,17 @@ export function AuditLogsWorkspace({
   const [category, setCategory] = useState<string>(defaultCategory);
   const [action, setAction] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const fetchLogs = useCallback(
     async (targetPage: number) => {
@@ -115,7 +123,7 @@ export function AuditLogsWorkspace({
     const params = new URLSearchParams();
     params.set('category', category);
     params.set('action', action);
-    if (searchQuery.trim()) params.set('q', searchQuery.trim());
+    if (debouncedSearchQuery.trim()) params.set('q', debouncedSearchQuery.trim());
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
     params.set('page', String(page));
@@ -149,7 +157,7 @@ export function AuditLogsWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [category, action, searchQuery, fromDate, toDate, page, pageSize]);
+  }, [category, action, debouncedSearchQuery, fromDate, toDate, page, pageSize]);
 
   const categoryOptions = useMemo(() => {
     const opts: Array<{ value: string; label: string }> = [];

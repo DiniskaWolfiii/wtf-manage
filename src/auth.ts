@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import NextAuth from 'next-auth';
 import Keycloak from 'next-auth/providers/keycloak';
 import { fetchUserKeycloakGroups } from '@/lib/keycloak';
@@ -40,7 +41,39 @@ interface RefreshedTokens {
 
 const inFlightRefreshes = new Map<string, Promise<RefreshedTokens | null>>();
 const RECENT_REFRESH_TTL_MS = 10 * 1000;
+const MAX_REFRESH_CACHE_ENTRIES = 1000;
 const recentRefreshes = new Map<string, { value: RefreshedTokens; expiresAt: number }>();
+
+function hashRefreshTokenKey(refreshToken: string): string {
+  return crypto.createHash('sha256').update(refreshToken).digest('hex');
+}
+
+function pruneRecentRefreshes(now: number): void {
+  for (const [key, entry] of recentRefreshes.entries()) {
+    if (entry.expiresAt <= now) {
+      recentRefreshes.delete(key);
+    }
+  }
+  while (recentRefreshes.size >= MAX_REFRESH_CACHE_ENTRIES) {
+    const oldestKey = recentRefreshes.keys().next().value;
+    if (!oldestKey) break;
+    recentRefreshes.delete(oldestKey);
+  }
+}
+
+/**
+ * Read-only lookup for a recently refreshed token set (populated by Auth.js jwt callback)
+ * so Server Components never trigger an unpersisted refresh token rotation against Keycloak.
+ */
+export function getCachedRefreshedToken(refreshToken: string): RefreshedTokens | null {
+  const now = Date.now();
+  const key = hashRefreshTokenKey(refreshToken);
+  const recent = recentRefreshes.get(key);
+  if (recent && recent.expiresAt > now) {
+    return recent.value;
+  }
+  return null;
+}
 
 async function refreshKeycloakToken(refreshToken: string): Promise<RefreshedTokens | null> {
   const issuer = process.env.KEYCLOAK_ISSUER;
@@ -109,18 +142,15 @@ async function refreshKeycloakToken(refreshToken: string): Promise<RefreshedToke
 
 export function getOrRefreshKeycloakToken(refreshToken: string): Promise<RefreshedTokens | null> {
   const now = Date.now();
-  for (const [key, entry] of recentRefreshes.entries()) {
-    if (entry.expiresAt <= now) {
-      recentRefreshes.delete(key);
-    }
-  }
+  pruneRecentRefreshes(now);
 
-  const recent = recentRefreshes.get(refreshToken);
+  const key = hashRefreshTokenKey(refreshToken);
+  const recent = recentRefreshes.get(key);
   if (recent && recent.expiresAt > now) {
     return Promise.resolve(recent.value);
   }
 
-  const existing = inFlightRefreshes.get(refreshToken);
+  const existing = inFlightRefreshes.get(key);
   if (existing) {
     return existing;
   }
@@ -128,7 +158,8 @@ export function getOrRefreshKeycloakToken(refreshToken: string): Promise<Refresh
   const promise = refreshKeycloakToken(refreshToken)
     .then((result) => {
       if (result) {
-        recentRefreshes.set(refreshToken, {
+        pruneRecentRefreshes(Date.now());
+        recentRefreshes.set(key, {
           value: result,
           expiresAt: Date.now() + RECENT_REFRESH_TTL_MS,
         });
@@ -136,9 +167,9 @@ export function getOrRefreshKeycloakToken(refreshToken: string): Promise<Refresh
       return result;
     })
     .finally(() => {
-      inFlightRefreshes.delete(refreshToken);
+      inFlightRefreshes.delete(key);
     });
-  inFlightRefreshes.set(refreshToken, promise);
+  inFlightRefreshes.set(key, promise);
   return promise;
 }
 

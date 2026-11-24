@@ -32,6 +32,14 @@ export async function GET() {
   }
 
   const isFrAdmin = authResult.permissions.includes('fr.crew.manage');
+  const canReadCrew = isFrAdmin || authResult.permissions.includes('fr.crew.view');
+  const canReadDepartments =
+    authResult.permissions.includes('fr.departments.view') ||
+    authResult.permissions.includes('fr.departments.manage');
+  const canReadSkills =
+    authResult.permissions.includes('fr.skills.view') ||
+    authResult.permissions.includes('fr.skills.manage');
+  const isPortalAdmin = authResult.permissions.includes('admin.portal.manage');
 
   try {
     const crewGroupIdentifier = await getCrewOnboardingGroup();
@@ -129,18 +137,45 @@ export async function GET() {
       });
     }
 
-    // Standard FR sees active Crew + stored master profiles (including on_leave & offboarded Alumni);
-    // FR Admin also sees non-crew Keycloak users for promotion.
+    // Scope returned users & fields strictly to the caller's individual FR permissions:
+    // - fr.crew.manage: all Keycloak users + master profiles (for onboarding)
+    // - fr.crew.view: active crew + stored master profiles (including on_leave / Alumni)
+    // - fr.departments.* / fr.skills.* only: active crew only with minimal fields needed for ranking/skill finder
     const users = isFrAdmin
       ? allUsers
-      : allUsers.filter((u) => u.isCrew || u.hasMasterProfile);
+      : canReadCrew
+      ? allUsers.filter((u) => u.isCrew || u.hasMasterProfile)
+      : allUsers
+          .filter((u) => u.isCrew)
+          .map((u) => ({
+            id: u.id,
+            username: u.username,
+            avatarUrl: u.avatarUrl,
+            isCrew: true,
+            status: 'active' as CrewStatus,
+            joinedAt: null,
+            offboardedAt: null,
+            hasMasterProfile: false,
+            roles: canReadDepartments ? u.roles : [],
+            skills: canReadSkills ? u.skills : [],
+          }));
+
+    const scopedDepartments =
+      canReadDepartments || canReadCrew
+        ? departments.map((d) => ({
+            ...d,
+            keycloakGroupId: isPortalAdmin ? d.keycloakGroupId : null,
+          }))
+        : [];
+
+    const scopedSkillsCatalog = canReadSkills || canReadCrew ? skillsCatalog : [];
 
     return NextResponse.json({
       crewGroupConfigured: Boolean(crewGroup),
       isFrAdmin,
       users,
-      departments,
-      skillsCatalog,
+      departments: scopedDepartments,
+      skillsCatalog: scopedSkillsCatalog,
     });
   } catch (err) {
     console.error('[API] GET /api/fr/crew failed:', (err as Error).message);

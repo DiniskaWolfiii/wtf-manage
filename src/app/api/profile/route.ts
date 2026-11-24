@@ -2,9 +2,19 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
 import { syncKeycloakSnapshotIfExists } from '@/lib/crew-profiles';
-import { fetchKeycloakUser, updateKeycloakUser, UserProfileData } from '@/lib/keycloak';
+import { getExpectedAppOrigin } from '@/lib/csrf';
+import {
+  fetchKeycloakUser,
+  sendKeycloakVerifyEmail,
+  updateKeycloakUser,
+  UserProfileData,
+} from '@/lib/keycloak';
 import { getServerAccessToken } from '@/lib/server-auth';
 import { sanitizeProfileUpdate } from '@/lib/validation';
+import {
+  getVerifyEmailRetryAfterSec,
+  markVerifyEmailSent,
+} from '@/lib/verify-email-cooldown';
 
 export async function GET() {
   const session = await auth();
@@ -64,19 +74,37 @@ export async function PUT(req: Request) {
     const accessToken = await getServerAccessToken();
     const previousProfile = await fetchKeycloakUser(userId, accessToken);
 
+    const emailChanged =
+      typeof sanitizedBody.email === 'string' &&
+      sanitizedBody.email.length > 0 &&
+      sanitizedBody.email.toLowerCase() !== (previousProfile?.email || '').trim().toLowerCase();
+
     const success = await updateKeycloakUser(userId, sanitizedBody, accessToken);
 
+    let verificationEmailSent = false;
+    let verificationCooldownSec = 0;
     if (success) {
       await syncKeycloakSnapshotIfExists(userId, sanitizedBody);
 
-      const changes: Record<string, { from: string; to: string }> = {};
+      if (emailChanged) {
+        verificationCooldownSec = getVerifyEmailRetryAfterSec(userId);
+        if (verificationCooldownSec === 0) {
+          const redirectUri = new URL('/profile', getExpectedAppOrigin(req.url)).toString();
+          verificationEmailSent = await sendKeycloakVerifyEmail(userId, redirectUri);
+          if (verificationEmailSent) {
+            markVerifyEmailSent(userId);
+          }
+        }
+      }
+
+      const changedFields: string[] = [];
       for (const [key, nextVal] of Object.entries(sanitizedBody)) {
         if (typeof nextVal !== 'string') continue;
         const prevVal = previousProfile
           ? String((previousProfile as unknown as Record<string, unknown>)[key] ?? '')
           : '';
         if (prevVal !== nextVal) {
-          changes[key] = { from: prevVal, to: nextVal };
+          changedFields.push(key);
         }
       }
 
@@ -94,14 +122,28 @@ export async function PUT(req: Request) {
         targetType: 'user',
         targetId: userId,
         targetLabel: actorUsername,
-        summary: `Updated profile fields (${Object.keys(changes).join(', ') || 'no changes'})`,
-        metadata: { changes },
+        summary: `Updated profile fields (${changedFields.join(', ') || 'no changes'})`,
+        metadata: {
+          changedFields,
+          ...(emailChanged ? { emailChanged: true, verificationEmailSent } : {}),
+        },
       });
     }
 
     return NextResponse.json({
       success,
-      message: success ? 'Profile updated in WinterFur Identity' : 'Could not sync to WinterFur Identity backend',
+      emailChanged: success && emailChanged,
+      emailVerified: success && emailChanged ? false : previousProfile?.emailVerified,
+      verificationEmailSent,
+      message: success
+        ? emailChanged
+          ? verificationEmailSent
+            ? 'Profile saved! Please verify your new email address via the verification link we sent you.'
+            : verificationCooldownSec > 0
+            ? `Profile saved! Please wait ${verificationCooldownSec}s and use "Resend Verification" to verify your new email.`
+            : 'Profile saved, but the verification email could not be sent automatically. Please use "Resend Verification".'
+          : 'Profile updated in WinterFur Identity'
+        : 'Could not sync to WinterFur Identity backend',
     });
   } catch (err) {
     console.error('Failed to update profile:', err);

@@ -1,14 +1,14 @@
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getToken, type JWT } from 'next-auth/jwt';
-import { auth, getOrRefreshKeycloakToken } from '@/auth';
+import { auth, getCachedRefreshedToken } from '@/auth';
 import { resolveUserPermissions } from '@/lib/permissions';
 import type { PortalPermission } from '@/lib/permission-types';
 
 const ABSOLUTE_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const TOKEN_REFRESH_BUFFER_MS = 30 * 1000;
 
-async function getServerToken(): Promise<JWT | null> {
+async function getRawServerToken(): Promise<JWT | null> {
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
   if (!secret) {
     return null;
@@ -38,41 +38,48 @@ async function getServerToken(): Promise<JWT | null> {
     return null;
   }
 
-  if (typeof token.expiresAt === 'number' && Date.now() >= token.expiresAt - TOKEN_REFRESH_BUFFER_MS) {
-    if (typeof token.refreshToken !== 'string' || !token.refreshToken) {
-      return null;
-    }
-    const refreshed = await getOrRefreshKeycloakToken(token.refreshToken);
-    if (!refreshed) {
-      return null;
-    }
-    return {
-      ...token,
-      accessToken: refreshed.accessToken,
-      idToken: refreshed.idToken ?? token.idToken,
-      refreshToken: refreshed.refreshToken ?? token.refreshToken,
-      expiresAt: refreshed.expiresAt,
-    };
-  }
-
   return token;
 }
 
 /**
  * Retrieve the user's Keycloak access token on the server from the encrypted Auth.js JWT cookie
- * without exposing it in the client-accessible session object.
+ * without triggering an unpersisted refresh token rotation (compatible with Keycloak Revoke Refresh Token).
  */
 export async function getServerAccessToken(): Promise<string | undefined> {
-  const token = await getServerToken();
-  return typeof token?.accessToken === 'string' ? token.accessToken : undefined;
+  const token = await getRawServerToken();
+  if (!token) {
+    return undefined;
+  }
+
+  if (typeof token.expiresAt === 'number' && Date.now() >= token.expiresAt - TOKEN_REFRESH_BUFFER_MS) {
+    if (typeof token.refreshToken === 'string' && token.refreshToken) {
+      const cached = getCachedRefreshedToken(token.refreshToken);
+      if (cached) {
+        return cached.accessToken;
+      }
+    }
+    return undefined;
+  }
+
+  return typeof token.accessToken === 'string' ? token.accessToken : undefined;
 }
 
 /**
- * Retrieve the user's Keycloak ID token on the server for federated OIDC logout.
+ * Retrieve the user's Keycloak ID token on the server for federated OIDC RP-Initiated Logout.
+ * Does NOT trigger a token refresh (OIDC logout accepts expired id_token_hint).
  */
 export async function getServerIdToken(): Promise<string | undefined> {
-  const token = await getServerToken();
-  return typeof token?.idToken === 'string' ? token.idToken : undefined;
+  const token = await getRawServerToken();
+  if (!token) {
+    return undefined;
+  }
+  if (typeof token.refreshToken === 'string' && token.refreshToken) {
+    const cached = getCachedRefreshedToken(token.refreshToken);
+    if (cached?.idToken) {
+      return cached.idToken;
+    }
+  }
+  return typeof token.idToken === 'string' ? token.idToken : undefined;
 }
 
 export interface AuthenticatedSessionUser {

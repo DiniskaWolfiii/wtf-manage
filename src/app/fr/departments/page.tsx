@@ -1,6 +1,6 @@
 import { fetchKeycloakUser, fetchUserCredentials } from '@/lib/keycloak';
 import { getServerAccessToken, getSessionWithPermissions } from '@/lib/server-auth';
-import { getIdentityDisplayConfig, getPortalSettings } from '@/lib/settings';
+import { getIdentityDisplayConfig, getPortalSettingsForPermissions } from '@/lib/settings';
 import { PortalShell } from '@/components/PortalShell';
 import { redirect } from 'next/navigation';
 
@@ -22,7 +22,7 @@ export default async function FrDepartmentsPage() {
   const [initialProfile, initialSecurity, initialSettings] = await Promise.all([
     fetchKeycloakUser(user.id, accessToken),
     fetchUserCredentials(user.id),
-    getPortalSettings(),
+    getPortalSettingsForPermissions(user.permissions),
   ]);
   const identityConfig = getIdentityDisplayConfig();
 

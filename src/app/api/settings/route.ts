@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
-import { requireSessionPermission } from '@/lib/server-auth';
-import { getPortalSettings, updatePortalSettings } from '@/lib/settings';
+import { getSessionWithPermissions, requireSessionPermission } from '@/lib/server-auth';
+import { getPortalSettingsForPermissions, updatePortalSettings } from '@/lib/settings';
 import { sanitizePortalSettingsUpdate } from '@/lib/validation';
 
 export async function GET() {
-  const session = await auth();
-  if (!session || !session.user || !session.user.id) {
+  const user = await getSessionWithPermissions();
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const settings = await getPortalSettings();
+  const settings = await getPortalSettingsForPermissions(user.permissions);
   return NextResponse.json(settings);
 }
 

@@ -297,7 +297,7 @@ export function FrDepartmentsSection({
             <Text size="xs" c="dimmed">
               {isFrAdmin
                 ? 'Create and manage departments available for crew role assignments'
-                : 'View departments and rank assigned crew members'}
+                : 'View departments and organizational hierarchy'}
             </Text>
           </div>
 
@@ -385,18 +385,18 @@ export function FrDepartmentsSection({
                       </Badge>
                     </Group>
                     <Group gap={4} wrap="nowrap">
-                      <ActionIcon
-                        variant="subtle"
-                        color="cyan"
-                        size="sm"
-                        title="Rank members"
-                        aria-label="Rank members"
-                        onClick={() => openRankEditor(dept)}
-                      >
-                        <IconArrowsSort size={14} />
-                      </ActionIcon>
                       {isFrAdmin && (
                         <>
+                          <ActionIcon
+                            variant="subtle"
+                            color="cyan"
+                            size="sm"
+                            title="Rank members"
+                            aria-label="Rank members"
+                            onClick={() => openRankEditor(dept)}
+                          >
+                            <IconArrowsSort size={14} />
+                          </ActionIcon>
                           <ActionIcon
                             variant="subtle"
                             color="gray"

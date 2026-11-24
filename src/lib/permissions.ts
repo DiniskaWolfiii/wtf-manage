@@ -279,3 +279,29 @@ export async function resolveUserPermissions(userGroups: string[]): Promise<Port
 
   return granted;
 }
+
+/**
+ * Checks whether a Keycloak group identifier (path or name) corresponds to the configured
+ * super-admin group (`ADMIN_GROUP`) or is mapped to `admin.portal.manage`.
+ * Used to prevent privilege escalation via department or crew onboarding group mappings.
+ */
+export async function isPrivilegedPortalGroup(
+  groupCandidates: string[],
+  overrideMappings?: PermissionMappings
+): Promise<boolean> {
+  const normalizedCandidates = new Set(
+    groupCandidates.map(normalizeGroupIdentifier).filter((g) => g.length > 0)
+  );
+  if (normalizedCandidates.size === 0) {
+    return false;
+  }
+
+  const adminGroup = getConfiguredAdminGroup();
+  if (adminGroup && normalizedCandidates.has(adminGroup)) {
+    return true;
+  }
+
+  const mappings = overrideMappings ?? (await getPermissionMappings());
+  const adminManageGroups = mappings['admin.portal.manage'] || [];
+  return adminManageGroups.some((g) => normalizedCandidates.has(normalizeGroupIdentifier(g)));
+}

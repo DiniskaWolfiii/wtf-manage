@@ -6,7 +6,7 @@ import {
   updateDepartmentKeycloakMapping,
 } from '@/lib/crew';
 import { addUserToGroup, listKeycloakGroups } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 
 function parseDepartmentId(rawId: string): number | null {
   const num = Number(rawId);
@@ -17,7 +17,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('winterfur-admin');
+  const authResult = await requireSessionPermission('admin.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

@@ -5,10 +5,8 @@ import {
   listCrewLifecycleEvents,
   updateCrewMasterData,
 } from '@/lib/crew-profiles';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import { sanitizeCrewMasterDataPayload } from '@/lib/validation';
-
-const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
 
 function isValidUserId(userId: string): boolean {
   return (
@@ -26,7 +24,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

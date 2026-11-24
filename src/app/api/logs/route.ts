@@ -1,21 +1,29 @@
 import { NextResponse } from 'next/server';
 import { queryAuditLogs, type AuditCategory } from '@/lib/audit';
-import { requireSessionRole } from '@/lib/server-auth';
-
-const LOG_VIEWER_ROLES = ['winterfur-admin', 'furry_ressources', 'furry_ressources_admin'];
+import { requireSessionPermission } from '@/lib/server-auth';
 
 export async function GET(request: Request) {
-  const authResult = await requireSessionRole(LOG_VIEWER_ROLES);
+  const authResult = await requireSessionPermission([
+    'logs.view_fr',
+    'logs.view_admin',
+    'logs.view_all',
+  ]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
-  const isAdmin = authResult.roles.includes('winterfur-admin');
-  const allowedCategories: AuditCategory[] | undefined = isAdmin ? undefined : ['fr'];
+  const { permissions } = authResult;
+  const canViewAll = permissions.includes('logs.view_all');
+  const allowedCategories: AuditCategory[] | undefined = canViewAll
+    ? undefined
+    : [
+        ...(permissions.includes('logs.view_fr') ? (['fr'] as const) : []),
+        ...(permissions.includes('logs.view_admin') ? (['admin'] as const) : []),
+      ];
 
   try {
     const { searchParams } = new URL(request.url);
-    const category = searchParams.get('category') || 'all';
+    const requestedCategory = searchParams.get('category') || 'all';
     const action = searchParams.get('action') || 'all';
     const q = searchParams.get('q') || '';
     const from = searchParams.get('from') || '';
@@ -23,8 +31,15 @@ export async function GET(request: Request) {
     const page = Number(searchParams.get('page') || '1');
     const pageSize = Number(searchParams.get('pageSize') || '50');
 
+    const effectiveCategory =
+      !allowedCategories ||
+      requestedCategory === 'all' ||
+      allowedCategories.includes(requestedCategory as AuditCategory)
+        ? requestedCategory
+        : allowedCategories[0] ?? 'all';
+
     const result = await queryAuditLogs({
-      category: isAdmin ? category : 'fr',
+      category: effectiveCategory,
       action,
       q,
       from,
@@ -36,7 +51,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ...result,
-      isAdmin,
+      canViewAll,
+      allowedCategories: allowedCategories ?? ['fr', 'admin', 'profile'],
     });
   } catch (err) {
     console.error('[API] GET /api/logs failed:', (err as Error).message);

@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
 import { recordAuditLog } from '@/lib/audit';
 import { createSkill, listSkills } from '@/lib/skills';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import {
   sanitizeSkillCategory,
   sanitizeSkillLevels,
   sanitizeSkillName,
 } from '@/lib/validation';
 
-const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
+const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
 
 export async function GET() {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission([...FR_READ_PERMS]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

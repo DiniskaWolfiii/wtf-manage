@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { recordAuditLog } from '@/lib/audit';
 import { getDepartmentById, updateDepartmentMemberOrder } from '@/lib/crew';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 
 function parseDepartmentId(rawId: string): number | null {
   const num = Number(rawId);
@@ -12,7 +12,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole(['furry_ressources', 'furry_ressources_admin']);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

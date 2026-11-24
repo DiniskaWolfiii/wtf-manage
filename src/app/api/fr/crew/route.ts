@@ -11,20 +11,20 @@ import {
   getKeycloakGroupByName,
   listKeycloakUsersMinimal,
 } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import { listAllCrewSkills, listSkills } from '@/lib/skills';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
 const CREW_GROUP_NAME = 'wtf-crew';
-const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
+const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
 
 export async function GET() {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission([...FR_READ_PERMS]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
 
-  const isFrAdmin = authResult.roles.includes('furry_ressources_admin');
+  const isFrAdmin = authResult.permissions.includes('fr.write');
 
   try {
     const [kcUsers, crewGroup, departments, assignments, skillsCatalog, crewSkills, profileMap] =
@@ -144,7 +144,7 @@ export async function GET() {
  * Sync / backfill all active `wtf-crew` members from Keycloak into `crew_profiles`.
  */
 export async function POST() {
-  const authResult = await requireSessionRole('furry_ressources_admin');
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

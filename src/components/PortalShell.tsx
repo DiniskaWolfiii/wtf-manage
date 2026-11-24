@@ -50,8 +50,10 @@ import type { UserCrewSkill } from '@/lib/skills';
 import type { UserProfileData } from '@/lib/keycloak';
 import { FrWorkspace } from '@/components/FrWorkspace';
 import { AdminDepartmentMapping } from '@/components/AdminDepartmentMapping';
+import { AdminPermissionsMapping } from '@/components/AdminPermissionsMapping';
 import { OrgChartWorkspace } from '@/components/OrgChartWorkspace';
 import { AuditLogsWorkspace } from '@/components/AuditLogsWorkspace';
+import type { PortalPermission } from '@/lib/permission-types';
 import {
   DEFAULT_PORTAL_SETTINGS,
   type IdentityDisplayConfig,
@@ -85,7 +87,7 @@ export interface SessionUser {
   email: string;
   username: string;
   image: string;
-  roles: string[];
+  permissions: PortalPermission[];
 }
 
 export function PortalShell({
@@ -107,12 +109,15 @@ export function PortalShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isAdmin = sessionUser?.roles?.includes('winterfur-admin') ?? false;
-  const isCrew = sessionUser?.roles?.includes('crew') ?? false;
-  const isFrAdmin = sessionUser?.roles?.includes('furry_ressources_admin') ?? false;
-  const hasFurryResources =
-    (sessionUser?.roles?.includes('furry_ressources') ?? false) || isFrAdmin;
-  const canViewLogs = isAdmin || hasFurryResources;
+  const permissions = sessionUser?.permissions ?? [];
+  const isAdmin = permissions.includes('admin.manage');
+  const isCrew = permissions.includes('crew.view');
+  const isFrAdmin = permissions.includes('fr.write');
+  const hasFurryResources = permissions.includes('fr.read') || isFrAdmin;
+  const canViewFrLogs = permissions.includes('logs.view_fr');
+  const canViewAdminLogs = permissions.includes('logs.view_admin');
+  const canViewAllLogs = permissions.includes('logs.view_all');
+  const canViewLogs = canViewFrLogs || canViewAdminLogs || canViewAllLogs;
   const frCrewDetailMatch = pathname.match(/^\/fr\/crew\/([^/]+)$/);
   const frCrewDetailUserId = frCrewDetailMatch ? decodeURIComponent(frCrewDetailMatch[1]) : null;
 
@@ -590,7 +595,7 @@ export function PortalShell({
                   router.push('/fr/skills');
                 }}
               />
-              {!isAdmin && (
+              {!isAdmin && canViewLogs && (
                 <NavLink
                   label="Audit Logs"
                   leftSection={<IconHistory size={18} />}
@@ -601,6 +606,23 @@ export function PortalShell({
                   }}
                 />
               )}
+            </div>
+          )}
+
+          {!isAdmin && !hasFurryResources && canViewLogs && (
+            <div>
+              <div className="uppercase-label" style={{ padding: '0 12px 6px' }}>
+                Logs
+              </div>
+              <NavLink
+                label="Audit Logs"
+                leftSection={<IconHistory size={18} />}
+                active={activeTab === 'logs'}
+                onClick={() => {
+                  closeMobileNav();
+                  router.push('/logs');
+                }}
+              />
             </div>
           )}
 
@@ -618,15 +640,17 @@ export function PortalShell({
                   router.push('/admin');
                 }}
               />
-              <NavLink
-                label="Audit Logs"
-                leftSection={<IconHistory size={18} />}
-                active={activeTab === 'logs'}
-                onClick={() => {
-                  closeMobileNav();
-                  router.push('/logs');
-                }}
-              />
+              {canViewLogs && (
+                <NavLink
+                  label="Audit Logs"
+                  leftSection={<IconHistory size={18} />}
+                  active={activeTab === 'logs'}
+                  onClick={() => {
+                    closeMobileNav();
+                    router.push('/logs');
+                  }}
+                />
+              )}
             </div>
           )}
         </Stack>
@@ -1665,11 +1689,16 @@ export function PortalShell({
               </Grid>
 
               <AdminDepartmentMapping />
+              <AdminPermissionsMapping />
             </Stack>
           )}
           {/* TAB 5: AUDIT LOGS */}
           {activeTab === 'logs' && canViewLogs && (
-            <AuditLogsWorkspace isAdmin={isAdmin} />
+            <AuditLogsWorkspace
+              canViewFr={canViewFrLogs}
+              canViewAdmin={canViewAdminLogs}
+              canViewAll={canViewAllLogs}
+            />
           )}
         </Box>
       </AppShell.Main>

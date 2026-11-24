@@ -1,15 +1,14 @@
-import { auth } from '@/auth';
+import { getSessionWithPermissions } from '@/lib/server-auth';
 import { redirect } from 'next/navigation';
 
 export default async function FrIndexPage() {
-  const session = await auth();
+  const user = await getSessionWithPermissions();
 
-  if (!session || !session.user || !session.user.id) {
+  if (!user) {
     redirect('/login?callbackUrl=/fr/crew');
   }
 
-  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
-  if (!roles.includes('furry_ressources') && !roles.includes('furry_ressources_admin')) {
+  if (!user.permissions.includes('fr.read') && !user.permissions.includes('fr.write')) {
     redirect('/profile');
   }
 

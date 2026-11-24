@@ -682,3 +682,46 @@ export async function removeUserFromGroup(userId: string, groupId: string): Prom
   }
 }
 
+/**
+ * Fetch the Keycloak group paths (normalized without leading/trailing slashes)
+ * for a specific user via the Keycloak Admin API.
+ */
+export async function fetchUserKeycloakGroups(userId: string): Promise<string[] | null> {
+  const { baseUrl, realm } = getKeycloakUrls();
+  const adminToken = await getAdminToken();
+  if (!adminToken || !isSafePathSegment(userId)) {
+    return null;
+  }
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/groups?briefRepresentation=true&max=200`,
+      {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
+      }
+    );
+
+    if (res.status === 401) {
+      cachedAdminToken = null;
+      return null;
+    }
+    if (!res.ok) {
+      console.warn(`[Keycloak] Failed to fetch user groups: ${res.status}`);
+      return null;
+    }
+
+    const data = (await res.json()) as Array<{ name?: string; path?: string }>;
+    const normalized = data
+      .map((g) => (g.path || g.name || '').trim().replace(/^\/+|\/+$/g, ''))
+      .filter((g) => g.length > 0);
+
+    return Array.from(new Set(normalized));
+  } catch (err) {
+    console.error('[Keycloak] Error fetching user groups:', err);
+    return null;
+  }
+}
+
+

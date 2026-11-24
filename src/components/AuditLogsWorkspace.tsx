@@ -41,7 +41,27 @@ const CATEGORY_COLORS: Record<string, string> = {
   profile: 'gray',
 };
 
-export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
+export function AuditLogsWorkspace({
+  canViewFr,
+  canViewAdmin,
+  canViewAll,
+}: {
+  canViewFr: boolean;
+  canViewAdmin: boolean;
+  canViewAll: boolean;
+}) {
+  const allowedCategories = useMemo(() => {
+    if (canViewAll) {
+      return ['fr', 'admin', 'profile'] as const;
+    }
+    const list: Array<'fr' | 'admin'> = [];
+    if (canViewFr) list.push('fr');
+    if (canViewAdmin) list.push('admin');
+    return list;
+  }, [canViewAll, canViewFr, canViewAdmin]);
+
+  const defaultCategory = allowedCategories.length > 1 ? 'all' : (allowedCategories[0] ?? 'fr');
+
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -50,7 +70,7 @@ export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
   const [availableActions, setAvailableActions] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [category, setCategory] = useState<string>(isAdmin ? 'all' : 'fr');
+  const [category, setCategory] = useState<string>(defaultCategory);
   const [action, setAction] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -61,7 +81,7 @@ export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
     async (targetPage: number) => {
       setErrorMessage(null);
       const params = new URLSearchParams();
-      params.set('category', isAdmin ? category : 'fr');
+      params.set('category', category);
       params.set('action', action);
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
       if (fromDate) params.set('from', fromDate);
@@ -87,13 +107,13 @@ export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
         setLoading(false);
       }
     },
-    [isAdmin, category, action, searchQuery, fromDate, toDate, pageSize]
+    [category, action, searchQuery, fromDate, toDate, pageSize]
   );
 
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams();
-    params.set('category', isAdmin ? category : 'fr');
+    params.set('category', category);
     params.set('action', action);
     if (searchQuery.trim()) params.set('q', searchQuery.trim());
     if (fromDate) params.set('from', fromDate);
@@ -129,20 +149,24 @@ export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [isAdmin, category, action, searchQuery, fromDate, toDate, page, pageSize]);
+  }, [category, action, searchQuery, fromDate, toDate, page, pageSize]);
 
-  const categoryOptions = useMemo(
-    () =>
-      isAdmin
-        ? [
-            { value: 'all', label: 'All Categories' },
-            { value: 'fr', label: 'Furry Resources (FR)' },
-            { value: 'admin', label: 'Administration' },
-            { value: 'profile', label: 'Profile & Security' },
-          ]
-        : [{ value: 'fr', label: 'Furry Resources (FR)' }],
-    [isAdmin]
-  );
+  const categoryOptions = useMemo(() => {
+    const opts: Array<{ value: string; label: string }> = [];
+    if (allowedCategories.length > 1) {
+      opts.push({ value: 'all', label: 'All Permitted Categories' });
+    }
+    if (canViewAll || canViewFr) {
+      opts.push({ value: 'fr', label: 'Furry Resources (FR)' });
+    }
+    if (canViewAll || canViewAdmin) {
+      opts.push({ value: 'admin', label: 'Administration' });
+    }
+    if (canViewAll) {
+      opts.push({ value: 'profile', label: 'Profile & Security' });
+    }
+    return opts;
+  }, [allowedCategories.length, canViewAll, canViewFr, canViewAdmin]);
 
   const actionOptions = useMemo(
     () => [
@@ -166,8 +190,12 @@ export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
             Audit Logs
           </Text>
           <Text size="sm" c="dimmed">
-            {isAdmin
+            {canViewAll
               ? 'Complete activity history across FR, Administration, and Profile'
+              : canViewFr && canViewAdmin
+              ? 'Activity history for Furry Resources and Administration'
+              : canViewAdmin
+              ? 'Activity history for Administration and Portal Settings'
               : 'Activity history for Furry Resources (crew promotions, roles, and departments)'}
           </Text>
         </div>
@@ -201,10 +229,10 @@ export function AuditLogsWorkspace({ isAdmin }: { isAdmin: boolean }) {
             data={categoryOptions}
             value={category}
             onChange={(val) => {
-              setCategory(val || (isAdmin ? 'all' : 'fr'));
+              setCategory(val || defaultCategory);
               setPage(1);
             }}
-            disabled={!isAdmin}
+            disabled={categoryOptions.length <= 1}
             style={{ minWidth: 180 }}
           />
           <Select

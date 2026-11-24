@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import { listAllCrewAssignments, listDepartments } from '@/lib/crew';
 import { getCrewProfileMap } from '@/lib/crew-profiles';
 import { listKeycloakUsersMinimal } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import { getPortalSettings } from '@/lib/settings';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
 export async function GET() {
-  const authResult = await requireSessionRole('crew');
+  const authResult = await requireSessionPermission('crew.view');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { listAllCrewAssignments, listDepartments } from '@/lib/crew';
 import { listKeycloakGroups } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 
 export async function GET() {
-  const authResult = await requireSessionRole('winterfur-admin');
+  const authResult = await requireSessionPermission('admin.manage');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

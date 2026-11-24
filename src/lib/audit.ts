@@ -19,6 +19,7 @@ export type AuditAction =
   | 'skill.updated'
   | 'skill.deleted'
   | 'settings.updated'
+  | 'permissions.updated'
   | 'profile.updated'
   | 'profile.avatar_updated'
   | 'profile.passkey_deleted';
@@ -28,7 +29,7 @@ export interface RecordAuditLogInput {
   action: AuditAction;
   actorUserId?: string | null;
   actorUsername?: string | null;
-  targetType?: 'user' | 'department' | 'skill' | 'settings' | 'credential' | 'session' | null;
+  targetType?: 'user' | 'department' | 'skill' | 'settings' | 'permissions' | 'credential' | 'session' | null;
   targetId?: string | null;
   targetLabel?: string | null;
   summary: string;

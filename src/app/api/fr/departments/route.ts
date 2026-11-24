@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { recordAuditLog } from '@/lib/audit';
 import { createDepartment, getDepartmentById, listDepartments } from '@/lib/crew';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import { sanitizeDepartmentName } from '@/lib/validation';
 
 export async function GET() {
-  const authResult = await requireSessionRole(['furry_ressources', 'furry_ressources_admin']);
+  const authResult = await requireSessionPermission(['fr.read', 'fr.write']);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -20,7 +20,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireSessionRole('furry_ressources_admin');
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

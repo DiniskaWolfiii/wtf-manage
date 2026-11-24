@@ -1,5 +1,7 @@
 import NextAuth from 'next-auth';
 import Keycloak from 'next-auth/providers/keycloak';
+import { fetchUserKeycloakGroups } from '@/lib/keycloak';
+import { normalizeGroupIdentifier } from '@/lib/permission-types';
 import { getSafeAvatarUrl } from '@/lib/validation';
 
 function decodeJwtPayload(jwt?: string): Record<string, unknown> | null {
@@ -17,33 +19,12 @@ function decodeJwtPayload(jwt?: string): Record<string, unknown> | null {
   }
 }
 
-function extractKeycloakRoles(
-  claims: Record<string, unknown> | null | undefined,
-  clientId?: string
-): string[] {
-  if (!claims) return [];
-
-  const realmAccess = claims.realm_access as { roles?: unknown } | undefined;
-  const realmRoles =
-    realmAccess && typeof realmAccess === 'object' && !Array.isArray(realmAccess) && Array.isArray(realmAccess.roles)
-      ? realmAccess.roles.filter((r): r is string => typeof r === 'string')
-      : [];
-
-  const resourceAccess = claims.resource_access as Record<string, { roles?: unknown } | undefined> | undefined;
-  const clientAccess =
-    clientId &&
-      resourceAccess &&
-      typeof resourceAccess === 'object' &&
-      !Array.isArray(resourceAccess) &&
-      Object.hasOwn(resourceAccess, clientId)
-      ? resourceAccess[clientId]
-      : undefined;
-  const clientRoles =
-    clientAccess && typeof clientAccess === 'object' && !Array.isArray(clientAccess) && Array.isArray(clientAccess.roles)
-      ? clientAccess.roles.filter((r): r is string => typeof r === 'string')
-      : [];
-
-  return [...realmRoles, ...clientRoles];
+function extractKeycloakGroups(claims: Record<string, unknown> | null | undefined): string[] {
+  if (!claims || !Array.isArray(claims.groups)) return [];
+  return claims.groups
+    .filter((g): g is string => typeof g === 'string')
+    .map(normalizeGroupIdentifier)
+    .filter((g) => g.length > 0);
 }
 
 const ABSOLUTE_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -54,7 +35,7 @@ interface RefreshedTokens {
   idToken?: string;
   refreshToken?: string;
   expiresAt: number;
-  roles: string[];
+  groups: string[];
 }
 
 const inFlightRefreshes = new Map<string, Promise<RefreshedTokens | null>>();
@@ -107,10 +88,10 @@ async function refreshKeycloakToken(refreshToken: string): Promise<RefreshedToke
     const accessClaims = decodeJwtPayload(data.access_token);
     const idClaims = decodeJwtPayload(data.id_token);
 
-    const roles = Array.from(
+    const groups = Array.from(
       new Set([
-        ...extractKeycloakRoles(accessClaims, clientId),
-        ...extractKeycloakRoles(idClaims, clientId),
+        ...extractKeycloakGroups(accessClaims),
+        ...extractKeycloakGroups(idClaims),
       ])
     );
 
@@ -119,7 +100,7 @@ async function refreshKeycloakToken(refreshToken: string): Promise<RefreshedToke
       idToken: typeof data.id_token === 'string' ? data.id_token : undefined,
       refreshToken: typeof data.refresh_token === 'string' ? data.refresh_token : undefined,
       expiresAt: Date.now() + expiresInSec * 1000,
-      roles,
+      groups,
     };
   } catch {
     return null;
@@ -193,7 +174,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.loginAt = Date.now();
 
         if (profile || account.access_token) {
-          const clientId = process.env.KEYCLOAK_CLIENT_ID;
           const profileObj = (profile as Record<string, unknown> | undefined) ?? null;
           const accessClaims = decodeJwtPayload(account.access_token);
 
@@ -210,13 +190,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             }
           }
 
-          const mergedRoles = Array.from(
+          const tokenGroups = Array.from(
             new Set([
-              ...extractKeycloakRoles(profileObj, clientId),
-              ...extractKeycloakRoles(accessClaims, clientId),
+              ...extractKeycloakGroups(profileObj),
+              ...extractKeycloakGroups(accessClaims),
             ])
           );
-          token.roles = mergedRoles;
+          const apiGroups = account.providerAccountId
+            ? await fetchUserKeycloakGroups(account.providerAccountId)
+            : null;
+          token.groups = apiGroups ?? tokenGroups;
         }
 
         return token;
@@ -236,7 +219,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token;
       }
 
-      // Access token expired -> refresh against Keycloak to sync roles and session state
+      // Access token expired -> refresh against Keycloak to sync groups and session state
       if (typeof token.refreshToken !== 'string' || !token.refreshToken) {
         return null;
       }
@@ -254,7 +237,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.refreshToken = refreshed.refreshToken;
       }
       token.expiresAt = refreshed.expiresAt;
-      token.roles = refreshed.roles;
+      const userId = typeof token.userId === 'string' ? token.userId : token.sub;
+      const apiGroups = userId ? await fetchUserKeycloakGroups(userId) : null;
+      token.groups = apiGroups ?? refreshed.groups;
 
       return token;
     },
@@ -269,7 +254,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           delete session.user.image;
         }
         (session.user as unknown as { username?: string }).username = token.username as string;
-        (session.user as unknown as { roles?: string[] }).roles = (token.roles as string[]) || [];
+        (session.user as unknown as { groups?: string[] }).groups = (token.groups as string[]) || [];
       }
       return session;
     },

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { recordAuditLog } from '@/lib/audit';
+import { requireSessionPermission } from '@/lib/server-auth';
 import { getPortalSettings, updatePortalSettings } from '@/lib/settings';
 import { sanitizePortalSettingsUpdate } from '@/lib/validation';
 
@@ -15,14 +16,9 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const session = await auth();
-  if (!session || !session.user || !session.user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
-  if (!roles.includes('winterfur-admin')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const authResult = await requireSessionPermission('admin.manage');
+  if (authResult instanceof NextResponse) {
+    return authResult;
   }
 
   try {
@@ -33,16 +29,12 @@ export async function PUT(request: Request) {
     }
 
     const updated = await updatePortalSettings(sanitized);
-    const actorUsername =
-      (session.user as unknown as { username?: string }).username ||
-      session.user.name ||
-      session.user.id;
 
     await recordAuditLog({
       category: 'admin',
       action: 'settings.updated',
-      actorUserId: session.user.id,
-      actorUsername,
+      actorUserId: authResult.userId,
+      actorUsername: authResult.username,
       targetType: 'settings',
       targetId: 'portal_settings',
       targetLabel: updated.conventionName,

@@ -8,7 +8,7 @@ import {
   wouldCreateDepartmentCycle,
 } from '@/lib/crew';
 import { removeUserFromGroup } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import { sanitizeDepartmentName } from '@/lib/validation';
 
 function parseDepartmentId(rawId: string): number | null {
@@ -20,7 +20,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources_admin');
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -121,7 +121,7 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources_admin');
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

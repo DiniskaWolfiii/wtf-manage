@@ -22,7 +22,7 @@ import {
   getKeycloakGroupByName,
   removeUserFromGroup,
 } from '@/lib/keycloak';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import {
   deleteAllUserCrewSkills,
   getCrewSkillsForUser,
@@ -37,7 +37,7 @@ import {
 } from '@/lib/validation';
 
 const CREW_GROUP_NAME = 'wtf-crew';
-const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
+const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
 
 function isValidUserId(userId: string): boolean {
   return (
@@ -109,7 +109,7 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission([...FR_READ_PERMS]);
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -177,7 +177,7 @@ export async function GET(
 
     return NextResponse.json({
       isCrew,
-      isFrAdmin: authResult.roles.includes('furry_ressources_admin'),
+      isFrAdmin: authResult.permissions.includes('fr.write'),
       profile,
       crewProfile: masterProfile,
       lifecycleEvents,
@@ -200,7 +200,7 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources_admin');
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -280,7 +280,7 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -432,7 +432,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -543,7 +543,7 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ userId: string }> }
 ) {
-  const authResult = await requireSessionRole('furry_ressources_admin');
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

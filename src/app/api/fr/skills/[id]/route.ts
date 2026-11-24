@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { recordAuditLog } from '@/lib/audit';
 import { deleteSkill, getSkillById, updateSkill } from '@/lib/skills';
-import { requireSessionRole } from '@/lib/server-auth';
+import { requireSessionPermission } from '@/lib/server-auth';
 import {
   sanitizeSkillCategory,
   sanitizeSkillLevels,
   sanitizeSkillName,
 } from '@/lib/validation';
 
-const FR_ANY_ROLES = ['furry_ressources', 'furry_ressources_admin'];
+const FR_READ_PERMS = ['fr.read', 'fr.write'] as const;
 
 function parseSkillId(rawId: string): number | null {
   if (!/^\d+$/.test(rawId)) return null;
@@ -20,7 +20,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }
@@ -113,7 +113,7 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireSessionRole(FR_ANY_ROLES);
+  const authResult = await requireSessionPermission('fr.write');
   if (authResult instanceof NextResponse) {
     return authResult;
   }

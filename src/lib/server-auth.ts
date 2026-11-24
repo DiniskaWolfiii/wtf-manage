@@ -2,6 +2,8 @@ import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getToken, type JWT } from 'next-auth/jwt';
 import { auth, getOrRefreshKeycloakToken } from '@/auth';
+import { resolveUserPermissions } from '@/lib/permissions';
+import type { PortalPermission } from '@/lib/permission-types';
 
 const ABSOLUTE_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const TOKEN_REFRESH_BUFFER_MS = 30 * 1000;
@@ -73,21 +75,63 @@ export async function getServerIdToken(): Promise<string | undefined> {
   return typeof token?.idToken === 'string' ? token.idToken : undefined;
 }
 
+export interface AuthenticatedSessionUser {
+  id: string;
+  name: string;
+  email: string;
+  image: string;
+  username: string;
+  permissions: PortalPermission[];
+}
+
+/**
+ * Loads the current Auth.js session and resolves the user's effective portal permissions
+ * on the server from their Keycloak groups. Returns `null` if unauthenticated.
+ */
+export async function getSessionWithPermissions(): Promise<AuthenticatedSessionUser | null> {
+  const session = await auth();
+  if (!session || !session.user || !session.user.id) {
+    return null;
+  }
+
+  const groups = (session.user as unknown as { groups?: string[] }).groups || [];
+  const permissions = await resolveUserPermissions(groups);
+  const username =
+    (session.user as unknown as { username?: string }).username ||
+    session.user.name ||
+    session.user.id;
+
+  return {
+    id: session.user.id,
+    name: session.user.name || '',
+    email: session.user.email || '',
+    image: session.user.image || '',
+    username,
+    permissions,
+  };
+}
+
 /**
  * Verify that the current request has an authenticated session with at least one
- * of the required roles. Returns `{ userId, username, roles }` or a `401`/`403` NextResponse.
+ * of the required portal permissions. Returns `{ userId, username, groups, permissions }`
+ * or a `401`/`403` NextResponse.
  */
-export async function requireSessionRole(
-  requiredRole: string | string[]
-): Promise<{ userId: string; username: string; roles: string[] } | NextResponse> {
+export async function requireSessionPermission(
+  requiredPermission: PortalPermission | PortalPermission[]
+): Promise<
+  | { userId: string; username: string; groups: string[]; permissions: PortalPermission[] }
+  | NextResponse
+> {
   const session = await auth();
   if (!session || !session.user || !session.user.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const roles = (session.user as unknown as { roles?: string[] }).roles || [];
-  const allowed = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-  if (!allowed.some((role) => roles.includes(role))) {
+  const groups = (session.user as unknown as { groups?: string[] }).groups || [];
+  const permissions = await resolveUserPermissions(groups);
+  const allowed = Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission];
+
+  if (!allowed.some((perm) => permissions.includes(perm))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -96,5 +140,5 @@ export async function requireSessionRole(
     session.user.name ||
     session.user.id;
 
-  return { userId: session.user.id, username, roles };
+  return { userId: session.user.id, username, groups, permissions };
 }

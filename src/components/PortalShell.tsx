@@ -746,7 +746,7 @@ export function PortalShell({
       >
         <Box
           style={{
-            maxWidth: activeTab === 'org-chart' ? '100%' : 1200,
+            maxWidth: activeTab === 'org-chart' ? '100%' : 1600,
             margin: '0 auto',
             padding: activeTab === 'org-chart' ? '24px' : '32px 24px',
           }}

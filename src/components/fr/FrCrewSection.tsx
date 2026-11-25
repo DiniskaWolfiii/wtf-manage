@@ -573,8 +573,13 @@ export function FrCrewSection({
                         borderColor: 'var(--mantine-color-dark-4)',
                       }}
                     >
-                      <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                        <Group gap="sm" style={{ minWidth: 220, flex: 1 }}>
+                      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+                        <Group
+                          gap="sm"
+                          wrap="nowrap"
+                          align="flex-start"
+                          style={{ minWidth: 220, flex: 1 }}
+                        >
                           <Avatar
                             src={safeAvatar ?? undefined}
                             radius="xl"
@@ -583,7 +588,7 @@ export function FrCrewSection({
                           >
                             {u.username.slice(0, 2).toUpperCase()}
                           </Avatar>
-                          <div style={{ minWidth: 0 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
                             <Group gap={6} wrap="wrap">
                               <Text
                                 component={Link}
@@ -660,7 +665,7 @@ export function FrCrewSection({
                           </div>
                         </Group>
 
-                        <Group gap="xs" wrap="wrap">
+                        <Group gap="xs" wrap="wrap" style={{ flexShrink: 0, maxWidth: '100%' }}>
                           <Button
                             component={Link}
                             href={`/fr/crew/${encodeURIComponent(u.id)}`}

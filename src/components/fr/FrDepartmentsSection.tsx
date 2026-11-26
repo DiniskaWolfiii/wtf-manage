@@ -6,13 +6,13 @@ import {
   Avatar,
   Badge,
   Button,
-  Divider,
   Group,
   Loader,
   Modal,
   Paper,
   Select,
   Stack,
+  Table,
   Text,
   TextInput,
 } from '@mantine/core';
@@ -25,11 +25,10 @@ import {
   IconTrash,
 } from '@tabler/icons-react';
 import { getSafeAvatarUrl } from '@/lib/validation';
-import {
-  DARK_MODAL_STYLES,
-  type DepartmentItem,
-  type FrStatusMessage,
-  type FrUserItem,
+import type {
+  DepartmentItem,
+  FrStatusMessage,
+  FrUserItem,
 } from '@/components/fr/types';
 
 export function FrDepartmentsSection({
@@ -47,8 +46,11 @@ export function FrDepartmentsSection({
   onRefresh: () => Promise<void>;
   onStatusMessage: (msg: FrStatusMessage | null) => void;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
   const [newDepartmentName, setNewDepartmentName] = useState('');
-  const [newDepartmentParentId, setNewDepartmentParentId] = useState<string | null>(null);
+  const [newDepartmentParentId, setNewDepartmentParentId] = useState<string | null>(
+    null
+  );
   const [creatingDepartment, setCreatingDepartment] = useState(false);
 
   const [editDeptTarget, setEditDeptTarget] = useState<DepartmentItem | null>(null);
@@ -56,7 +58,9 @@ export function FrDepartmentsSection({
   const [editDeptParentId, setEditDeptParentId] = useState<string | null>(null);
   const [savingDeptEdit, setSavingDeptEdit] = useState(false);
 
-  const [deleteDeptTarget, setDeleteDeptTarget] = useState<DepartmentItem | null>(null);
+  const [deleteDeptTarget, setDeleteDeptTarget] = useState<DepartmentItem | null>(
+    null
+  );
   const [deletingDept, setDeletingDept] = useState(false);
 
   const [rankDeptTarget, setRankDeptTarget] = useState<DepartmentItem | null>(null);
@@ -87,7 +91,9 @@ export function FrDepartmentsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: trimmed,
-          parentDepartmentId: newDepartmentParentId ? Number(newDepartmentParentId) : null,
+          parentDepartmentId: newDepartmentParentId
+            ? Number(newDepartmentParentId)
+            : null,
         }),
       });
       const data = await res.json();
@@ -100,6 +106,7 @@ export function FrDepartmentsSection({
       }
       setNewDepartmentName('');
       setNewDepartmentParentId(null);
+      setCreateOpen(false);
       onStatusMessage({
         type: 'success',
         text: `Department "${data.department.name}" created.`,
@@ -275,174 +282,189 @@ export function FrDepartmentsSection({
 
   return (
     <>
-      <Paper
-        p={24}
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
-          borderColor: 'var(--mantine-color-dark-4)',
-        }}
-      >
+      <Paper p="lg" withBorder>
         <Stack gap="md">
-          <div>
+          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
             <Group gap="xs">
-              <Text size="md" fw={700} c="white">
+              <Text size="sm" fw={700}>
                 Departments
               </Text>
-              <Badge size="xs" variant="light" color="gray">
+              <Badge size="xs" color="gray">
                 {departments.length}
               </Badge>
             </Group>
-            <Text size="xs" c="dimmed">
-              {isFrAdmin
-                ? 'Create and manage departments available for crew role assignments'
-                : 'View departments and organizational hierarchy'}
-            </Text>
-          </div>
 
-          {isFrAdmin && (
-            <>
-              <form onSubmit={handleCreateDepartment}>
-                <Group gap="sm" align="flex-end" wrap="wrap">
-                  <TextInput
-                    label="Department Name"
-                    placeholder="e.g. ConOps"
-                    value={newDepartmentName}
-                    onChange={(e) => setNewDepartmentName(e.target.value)}
-                    style={{ flex: 1, minWidth: 200 }}
-                    maxLength={80}
-                  />
-                  <Select
-                    label="Parent Department (Optional)"
-                    placeholder="None (Top Level)"
-                    data={departmentSelectOptions}
-                    value={newDepartmentParentId}
-                    onChange={setNewDepartmentParentId}
-                    clearable
-                    searchable
-                    style={{ flex: 1, minWidth: 200 }}
-                  />
-                  <Button
-                    type="submit"
-                    color="cyan"
-                    leftSection={<IconPlus size={14} />}
-                    loading={creatingDepartment}
-                    disabled={!newDepartmentName.trim()}
-                  >
-                    Create Department
-                  </Button>
-                </Group>
-              </form>
-
-              <Divider color="var(--mantine-color-dark-4)" />
-            </>
-          )}
+            {isFrAdmin && (
+              <Button
+                size="xs"
+                leftSection={<IconPlus size={14} />}
+                onClick={() => setCreateOpen(true)}
+              >
+                Create Department
+              </Button>
+            )}
+          </Group>
 
           {loading ? (
-            <Group justify="center" gap="sm" py="md">
+            <Group justify="center" gap="sm" py="lg">
               <Loader size="sm" color="cyan" />
               <Text size="sm" c="dimmed">
                 Loading departments...
               </Text>
             </Group>
           ) : departments.length === 0 ? (
-            <Text size="xs" c="dimmed">
-              No departments created yet. Add your first department above.
+            <Text size="sm" c="dimmed" py="md" ta="center">
+              No departments created yet.
             </Text>
           ) : (
-            <Stack gap="xs">
-              {departments.map((dept) => (
-                <Paper
-                  key={dept.id}
-                  p="sm"
-                  radius="sm"
-                  withBorder
-                  style={{
-                    backgroundColor: 'var(--mantine-color-dark-6)',
-                    borderColor: 'var(--mantine-color-dark-4)',
-                  }}
-                >
-                  <Group justify="space-between" wrap="nowrap" gap="xs">
-                    <Group gap="sm" wrap="wrap" style={{ minWidth: 0 }}>
-                      <Text size="sm" fw={600} c="white" truncate>
-                        {dept.name}
-                      </Text>
-                      {dept.parentDepartmentId &&
-                        departmentNameById.has(dept.parentDepartmentId) && (
-                          <Badge size="xs" variant="light" color="cyan">
-                            Under: {departmentNameById.get(dept.parentDepartmentId)}
+            <Table.ScrollContainer minWidth={560}>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Department</Table.Th>
+                    <Table.Th>Parent</Table.Th>
+                    <Table.Th>Keycloak Group</Table.Th>
+                    {isFrAdmin && <Table.Th ta="right">Actions</Table.Th>}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {departments.map((dept) => {
+                    const parentName = dept.parentDepartmentId
+                      ? departmentNameById.get(dept.parentDepartmentId)
+                      : null;
+                    return (
+                      <Table.Tr key={dept.id}>
+                        <Table.Td>
+                          <Text size="sm" fw={600}>
+                            {dept.name}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          {parentName ? (
+                            <Badge size="xs" color="cyan">
+                              {parentName}
+                            </Badge>
+                          ) : (
+                            <Text size="xs" c="dimmed">
+                              Top Level
+                            </Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            size="xs"
+                            color={dept.keycloakGroupName ? 'teal' : 'gray'}
+                          >
+                            {dept.keycloakGroupName
+                              ? dept.keycloakGroupName
+                              : 'Database Only'}
                           </Badge>
+                        </Table.Td>
+                        {isFrAdmin && (
+                          <Table.Td ta="right">
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <ActionIcon
+                                variant="subtle"
+                                color="cyan"
+                                size="sm"
+                                title="Rank members"
+                                aria-label="Rank members"
+                                onClick={() => openRankEditor(dept)}
+                              >
+                                <IconArrowsSort size={14} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                title="Edit department"
+                                aria-label="Edit department"
+                                onClick={() => {
+                                  setEditDeptTarget(dept);
+                                  setEditDeptName(dept.name);
+                                  setEditDeptParentId(
+                                    dept.parentDepartmentId
+                                      ? String(dept.parentDepartmentId)
+                                      : null
+                                  );
+                                }}
+                              >
+                                <IconEdit size={14} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                title="Delete department"
+                                aria-label="Delete department"
+                                onClick={() => setDeleteDeptTarget(dept)}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </Group>
+                          </Table.Td>
                         )}
-                      <Badge
-                        size="xs"
-                        variant="light"
-                        color={dept.keycloakGroupName ? 'teal' : 'gray'}
-                      >
-                        {dept.keycloakGroupName
-                          ? `KC: ${dept.keycloakGroupName}`
-                          : 'Database Only'}
-                      </Badge>
-                    </Group>
-                    <Group gap={4} wrap="nowrap">
-                      {isFrAdmin && (
-                        <>
-                          <ActionIcon
-                            variant="subtle"
-                            color="cyan"
-                            size="sm"
-                            title="Rank members"
-                            aria-label="Rank members"
-                            onClick={() => openRankEditor(dept)}
-                          >
-                            <IconArrowsSort size={14} />
-                          </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="gray"
-                            size="sm"
-                            title="Edit"
-                            aria-label="Edit department"
-                            onClick={() => {
-                              setEditDeptTarget(dept);
-                              setEditDeptName(dept.name);
-                              setEditDeptParentId(
-                                dept.parentDepartmentId
-                                  ? String(dept.parentDepartmentId)
-                                  : null
-                              );
-                            }}
-                          >
-                            <IconEdit size={14} />
-                          </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            title="Delete"
-                            aria-label="Delete department"
-                            onClick={() => setDeleteDeptTarget(dept)}
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </>
-                      )}
-                    </Group>
-                  </Group>
-                </Paper>
-              ))}
-            </Stack>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           )}
         </Stack>
       </Paper>
+
+      {/* Modal: Create Department */}
+      <Modal
+        opened={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create Department"
+      >
+        <form onSubmit={handleCreateDepartment}>
+          <Stack gap="md">
+            <TextInput
+              label="Department Name"
+              placeholder="e.g. ConOps"
+              required
+              maxLength={80}
+              value={newDepartmentName}
+              onChange={(e) => setNewDepartmentName(e.target.value)}
+            />
+            <Select
+              label="Parent Department (Optional)"
+              placeholder="None (Top Level)"
+              data={departmentSelectOptions}
+              value={newDepartmentParentId}
+              onChange={setNewDepartmentParentId}
+              clearable
+              searchable
+            />
+            <Group justify="flex-end" gap="xs">
+              <Button
+                variant="default"
+                size="xs"
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="xs"
+                loading={creatingDepartment}
+                disabled={!newDepartmentName.trim()}
+              >
+                Create
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* Modal: Edit Department */}
       <Modal
         opened={Boolean(editDeptTarget)}
         onClose={() => setEditDeptTarget(null)}
         title="Edit Department"
-        centered
-        styles={DARK_MODAL_STYLES}
       >
         <form onSubmit={handleSaveDepartmentEdit}>
           <Stack gap="md">
@@ -465,10 +487,14 @@ export function FrDepartmentsSection({
               searchable
             />
             <Group justify="flex-end" gap="xs">
-              <Button variant="default" size="xs" onClick={() => setEditDeptTarget(null)}>
+              <Button
+                variant="default"
+                size="xs"
+                onClick={() => setEditDeptTarget(null)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" color="cyan" size="xs" loading={savingDeptEdit}>
+              <Button type="submit" size="xs" loading={savingDeptEdit}>
                 Save
               </Button>
             </Group>
@@ -481,24 +507,28 @@ export function FrDepartmentsSection({
         opened={Boolean(deleteDeptTarget)}
         onClose={() => setDeleteDeptTarget(null)}
         title="Delete Department"
-        centered
-        styles={DARK_MODAL_STYLES}
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Are you sure you want to delete the department{' '}
-            <strong style={{ color: '#fff' }}>{deleteDeptTarget?.name}</strong>? All associated
-            crew assignments will also be removed.
+            Delete{' '}
+            <strong style={{ color: 'var(--mantine-color-white)' }}>
+              {deleteDeptTarget?.name}
+            </strong>
+            ? All associated crew assignments will also be removed.
           </Text>
           <Group justify="flex-end" gap="xs">
-            <Button variant="default" size="xs" onClick={() => setDeleteDeptTarget(null)}>
+            <Button
+              variant="default"
+              size="xs"
+              onClick={() => setDeleteDeptTarget(null)}
+            >
               Cancel
             </Button>
             <Button
               color="red"
               size="xs"
               loading={deletingDept}
-              onClick={handleDeleteDepartment}
+              onClick={() => void handleDeleteDepartment()}
             >
               Delete Permanently
             </Button>
@@ -510,16 +540,9 @@ export function FrDepartmentsSection({
       <Modal
         opened={Boolean(rankDeptTarget)}
         onClose={() => setRankDeptTarget(null)}
-        title={`Rank Members: ${rankDeptTarget?.name ?? ''}`}
-        centered
-        styles={DARK_MODAL_STYLES}
+        title={`Rank Members — ${rankDeptTarget?.name ?? ''}`}
       >
         <Stack gap="md">
-          <Text size="xs" c="dimmed">
-            Order members from top to bottom as they should appear in the Org Chart (independent
-            of position title).
-          </Text>
-
           {rankedMembers.length === 0 ? (
             <Text size="sm" c="dimmed" py="sm" ta="center">
               No members assigned to this department yet.
@@ -534,14 +557,11 @@ export function FrDepartmentsSection({
                     p="sm"
                     radius="sm"
                     withBorder
-                    style={{
-                      backgroundColor: 'var(--mantine-color-dark-6)',
-                      borderColor: 'var(--mantine-color-dark-4)',
-                    }}
+                    bg="var(--mantine-color-dark-6)"
                   >
                     <Group justify="space-between" wrap="nowrap" gap="sm">
                       <Group gap="sm" style={{ minWidth: 0, flex: 1 }}>
-                        <Badge size="xs" variant="light" color="cyan">
+                        <Badge size="xs" color="cyan">
                           #{index + 1}
                         </Badge>
                         <Avatar
@@ -553,7 +573,7 @@ export function FrDepartmentsSection({
                           {member.username.slice(0, 2).toUpperCase()}
                         </Avatar>
                         <div style={{ minWidth: 0 }}>
-                          <Text size="sm" fw={600} c="white" truncate>
+                          <Text size="sm" fw={600} truncate>
                             {member.username}
                           </Text>
                           {member.position && (
@@ -579,7 +599,9 @@ export function FrDepartmentsSection({
                           color="gray"
                           size="sm"
                           aria-label="Move down"
-                          disabled={index === rankedMembers.length - 1 || savingOrder}
+                          disabled={
+                            index === rankedMembers.length - 1 || savingOrder
+                          }
                           onClick={() => moveRankedMember(index, 1)}
                         >
                           <IconArrowDown size={14} />
@@ -593,15 +615,18 @@ export function FrDepartmentsSection({
           )}
 
           <Group justify="flex-end" gap="xs">
-            <Button variant="default" size="xs" onClick={() => setRankDeptTarget(null)}>
+            <Button
+              variant="default"
+              size="xs"
+              onClick={() => setRankDeptTarget(null)}
+            >
               Cancel
             </Button>
             <Button
-              color="cyan"
               size="xs"
               loading={savingOrder}
               disabled={rankedMembers.length < 2}
-              onClick={handleSaveOrder}
+              onClick={() => void handleSaveOrder()}
             >
               Save Order
             </Button>

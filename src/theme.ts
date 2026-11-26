@@ -2,19 +2,45 @@ import { createTheme } from '@mantine/core';
 
 export const theme = createTheme({
   primaryColor: 'cyan',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  cursorType: 'pointer',
+  fontFamily:
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   defaultRadius: 'sm',
   components: {
-    Pill: {
-      styles: {
-        root: {
-          backgroundColor: 'var(--mantine-color-dark-6)',
-          border: '1px solid var(--mantine-color-dark-4)',
-          color: 'var(--mantine-color-dark-0)',
-          fontWeight: '500',
-        },
+    Paper: {
+      defaultProps: {
+        radius: 'md',
+      },
+    },
+    Modal: {
+      defaultProps: {
+        centered: true,
+        radius: 'md',
+      },
+    },
+    Alert: {
+      defaultProps: {
+        variant: 'light',
+        radius: 'sm',
+      },
+    },
+    Badge: {
+      defaultProps: {
+        variant: 'light',
+        radius: 'sm',
+      },
+    },
+    Table: {
+      defaultProps: {
+        highlightOnHover: true,
+        verticalSpacing: 'sm',
+        horizontalSpacing: 'md',
+      },
+    },
+    NavLink: {
+      defaultProps: {
+        variant: 'light',
       },
     },
   },
 });
-

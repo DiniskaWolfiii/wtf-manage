@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ActionIcon,
+  Alert,
   Avatar,
   Badge,
   Box,
@@ -16,6 +17,7 @@ import {
   Tooltip,
 } from '@mantine/core';
 import {
+  IconAlertCircle,
   IconBuilding,
   IconFocusCentered,
   IconMinus,
@@ -26,6 +28,7 @@ import {
   IconUsersGroup,
 } from '@tabler/icons-react';
 import { getSafeAvatarUrl } from '@/lib/validation';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface OrgChartMember {
   userId: string;
@@ -133,7 +136,6 @@ function OrgDepartmentBranch({
         flexShrink: 0,
       }}
     >
-      {/* Vertical connector from parent */}
       <Box
         style={{
           width: 2,
@@ -143,25 +145,23 @@ function OrgDepartmentBranch({
       />
 
       <Paper
-        p={20}
-        radius="md"
+        p="md"
         withBorder
+        w={300}
         style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
           borderColor:
-            depth === 0 ? 'var(--mantine-color-cyan-8)' : 'var(--mantine-color-dark-4)',
-          width: 300,
+            depth === 0 ? 'var(--mantine-color-cyan-8)' : undefined,
         }}
       >
         <Stack gap="sm">
           <Group justify="space-between" align="center" wrap="nowrap">
             <Group gap="xs" style={{ minWidth: 0 }}>
               <IconBuilding size={16} color="var(--mantine-color-cyan-4)" />
-              <Text size="md" fw={700} c="white" truncate>
+              <Text size="sm" fw={700} truncate>
                 {node.name}
               </Text>
             </Group>
-            <Badge size="xs" variant="light" color="gray">
+            <Badge size="xs" color="gray">
               <Group gap={4} wrap="nowrap">
                 <IconUsersGroup size={12} />
                 <span>{node.members.length}</span>
@@ -180,13 +180,10 @@ function OrgDepartmentBranch({
                 return (
                   <Paper
                     key={member.userId}
-                    p="sm"
+                    p="xs"
                     radius="sm"
                     withBorder
-                    style={{
-                      backgroundColor: 'var(--mantine-color-dark-6)',
-                      borderColor: 'var(--mantine-color-dark-4)',
-                    }}
+                    bg="var(--mantine-color-dark-6)"
                   >
                     <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
                       <Avatar
@@ -198,7 +195,7 @@ function OrgDepartmentBranch({
                         {member.username.slice(0, 2).toUpperCase()}
                       </Avatar>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <Text size="sm" fw={600} c="white" truncate>
+                        <Text size="sm" fw={600} truncate>
                           {member.username}
                         </Text>
                         {member.position && (
@@ -216,7 +213,6 @@ function OrgDepartmentBranch({
         </Stack>
       </Paper>
 
-      {/* Render child departments recursively underneath */}
       {node.children.length > 0 && (
         <OrgChildrenRow nodes={node.children} depth={depth + 1} />
       )}
@@ -309,7 +305,6 @@ export function OrgChartWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Interactive pan & zoom state
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [transform, setTransform] = useState({ x: 0, y: 24, scale: 1 });
@@ -406,7 +401,6 @@ export function OrgChartWorkspace() {
     setTransform({ x: nextX, y: nextY, scale: nextScale });
   }, []);
 
-  // Auto-fit when data loads or search changes
   useEffect(() => {
     if (loading || departments.length === 0) return;
     const frame = requestAnimationFrame(() => {
@@ -415,14 +409,12 @@ export function OrgChartWorkspace() {
     return () => cancelAnimationFrame(frame);
   }, [loading, departments.length, filteredTree, fitToView]);
 
-  // Refit on window resize
   useEffect(() => {
     const onResize = () => fitToView();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [fitToView]);
 
-  // Non-passive wheel listener for smooth mouse-wheel zoom toward cursor
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -451,7 +443,6 @@ export function OrgChartWorkspace() {
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    // Do not hijack clicks on buttons inside the floating toolbar
     if ((e.target as HTMLElement).closest('button')) return;
 
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -508,66 +499,44 @@ export function OrgChartWorkspace() {
   };
 
   return (
-    <Stack gap={20}>
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
-        <div>
-          <Text size="xl" fw={700} c="white">
-            Org Chart
-          </Text>
-          <Text size="sm" c="dimmed">
-            Drag to pan, scroll to zoom, or fit to window
-          </Text>
-        </div>
-        <Group gap="xs" wrap="wrap">
-          <TextInput
-            placeholder="Search department, user, or role..."
-            leftSection={<IconSearch size={14} />}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            size="xs"
-            style={{ minWidth: 220 }}
-          />
-          <Button
-            variant="default"
-            size="xs"
-            leftSection={<IconRefresh size={14} />}
-            onClick={() => {
-              setLoading(true);
-              void loadOrgChart();
-            }}
-            loading={loading}
-          >
-            Refresh
-          </Button>
-        </Group>
-      </Group>
+    <Stack gap="lg">
+      <PageHeader
+        title="Org Chart"
+        tooltip="Drag canvas to pan, scroll to zoom, or fit to window."
+        actions={
+          <>
+            <TextInput
+              placeholder="Search department, user, or role..."
+              leftSection={<IconSearch size={14} />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              size="xs"
+              w={{ base: '100%', sm: 220 }}
+            />
+            <Button
+              variant="default"
+              size="xs"
+              leftSection={<IconRefresh size={14} />}
+              onClick={() => {
+                setLoading(true);
+                void loadOrgChart();
+              }}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {errorMessage && (
-        <Paper
-          p="sm"
-          radius="sm"
-          withBorder
-          style={{
-            backgroundColor: 'rgba(250, 82, 82, 0.1)',
-            borderColor: 'rgba(250, 82, 82, 0.35)',
-          }}
-        >
-          <Text size="xs" fw={600} c="red.4">
-            {errorMessage}
-          </Text>
-        </Paper>
+        <Alert color="red" icon={<IconAlertCircle size={16} />}>
+          {errorMessage}
+        </Alert>
       )}
 
       {loading ? (
-        <Paper
-          p={24}
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: 'var(--mantine-color-dark-7)',
-            borderColor: 'var(--mantine-color-dark-4)',
-          }}
-        >
+        <Paper p="xl" withBorder>
           <Group justify="center" gap="sm" py="md">
             <Loader size="sm" color="cyan" />
             <Text size="sm" c="dimmed">
@@ -576,15 +545,7 @@ export function OrgChartWorkspace() {
           </Group>
         </Paper>
       ) : departments.length === 0 ? (
-        <Paper
-          p={24}
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: 'var(--mantine-color-dark-7)',
-            borderColor: 'var(--mantine-color-dark-4)',
-          }}
-        >
+        <Paper p="xl" withBorder>
           <Text size="sm" c="dimmed" ta="center">
             No departments have been created yet.
           </Text>
@@ -592,8 +553,8 @@ export function OrgChartWorkspace() {
       ) : (
         <Paper
           ref={containerRef}
-          radius="md"
           withBorder
+          bg="var(--mantine-color-dark-8)"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUpOrCancel}
@@ -601,19 +562,16 @@ export function OrgChartWorkspace() {
           style={{
             position: 'relative',
             overflow: 'hidden',
-            height: 'calc(100vh - 188px)',
+            height: 'calc(100vh - 172px)',
             minHeight: 440,
-            backgroundColor: 'var(--mantine-color-dark-8)',
-            borderColor: 'var(--mantine-color-dark-4)',
             backgroundImage:
-              'radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px)',
+              'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
             backgroundSize: '24px 24px',
             cursor: isDragging ? 'grabbing' : 'grab',
             userSelect: 'none',
             touchAction: 'none',
           }}
         >
-          {/* Floating Zoom & Fit Toolbar */}
           <Paper
             p={6}
             radius="sm"
@@ -623,8 +581,6 @@ export function OrgChartWorkspace() {
               top: 12,
               right: 12,
               zIndex: 10,
-              backgroundColor: 'var(--mantine-color-dark-7)',
-              borderColor: 'var(--mantine-color-dark-4)',
             }}
           >
             <Group gap={4} wrap="nowrap">
@@ -667,7 +623,6 @@ export function OrgChartWorkspace() {
             </Group>
           </Paper>
 
-          {/* Transformable Org Tree Canvas */}
           <Box
             ref={contentRef}
             style={{
@@ -683,47 +638,32 @@ export function OrgChartWorkspace() {
               padding: 16,
             }}
           >
-            {/* Root Node */}
             <Paper
               p="md"
               px="xl"
-              radius="md"
               withBorder
-              style={{
-                backgroundColor: 'var(--mantine-color-dark-7)',
-                borderColor: 'var(--mantine-color-cyan-7)',
-                minWidth: 260,
-                textAlign: 'center',
-              }}
+              miw={260}
+              ta="center"
+              style={{ borderColor: 'var(--mantine-color-cyan-7)' }}
             >
               <Group justify="center" gap="xs" mb={4}>
                 <IconSitemap size={18} color="var(--mantine-color-cyan-4)" />
-                <Text size="md" fw={700} c="white">
+                <Text size="md" fw={700}>
                   {conventionName} Crew
                 </Text>
               </Group>
               <Group justify="center" gap="xs">
-                <Badge size="xs" variant="light" color="cyan">
+                <Badge size="xs" color="cyan">
                   {departments.length} Departments
                 </Badge>
-                <Badge size="xs" variant="light" color="teal">
+                <Badge size="xs" color="teal">
                   {totalCrewMembers} Assigned Crew
                 </Badge>
               </Group>
             </Paper>
 
             {filteredTree.length === 0 ? (
-              <Paper
-                p={24}
-                mt={24}
-                radius="md"
-                withBorder
-                style={{
-                  backgroundColor: 'var(--mantine-color-dark-7)',
-                  borderColor: 'var(--mantine-color-dark-4)',
-                  minWidth: 300,
-                }}
-              >
+              <Paper p="lg" mt="lg" withBorder miw={300}>
                 <Text size="sm" c="dimmed" ta="center">
                   No departments or members match &ldquo;{searchQuery.trim()}&rdquo;.
                 </Text>

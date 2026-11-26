@@ -2,18 +2,20 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Badge,
   Button,
-  Divider,
+  Code,
   Group,
   Loader,
   MultiSelect,
   Paper,
   Select,
   Stack,
+  Table,
   Text,
 } from '@mantine/core';
-import { IconCheck, IconRefresh, IconShieldLock } from '@tabler/icons-react';
+import { IconAlertCircle, IconCheck, IconRefresh } from '@tabler/icons-react';
 import {
   DEFAULT_PERMISSION_MAPPINGS,
   PERMISSION_DEFINITIONS,
@@ -22,6 +24,8 @@ import {
   type PermissionMappings,
   type PortalPermission,
 } from '@/lib/permission-types';
+import { notifySuccess } from '@/lib/notify';
+import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 interface KeycloakGroupItem {
   id: string;
@@ -32,24 +36,26 @@ interface KeycloakGroupItem {
 export function AdminPermissionsMapping() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [mappings, setMappings] = useState<PermissionMappings>(DEFAULT_PERMISSION_MAPPINGS);
-  const [savedMappings, setSavedMappings] = useState<PermissionMappings>(DEFAULT_PERMISSION_MAPPINGS);
+  const [mappings, setMappings] = useState<PermissionMappings>(
+    DEFAULT_PERMISSION_MAPPINGS
+  );
+  const [savedMappings, setSavedMappings] = useState<PermissionMappings>(
+    DEFAULT_PERMISSION_MAPPINGS
+  );
   const [crewGroup, setCrewGroup] = useState<string | null>(null);
   const [savedCrewGroup, setSavedCrewGroup] = useState<string | null>(null);
   const [adminGroup, setAdminGroup] = useState<string | null>(null);
   const [keycloakGroups, setKeycloakGroups] = useState<KeycloakGroupItem[]>([]);
   const [keycloakGroupsAvailable, setKeycloakGroupsAvailable] = useState(true);
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadPermissions = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/permissions', { cache: 'no-store' });
       const data = await res.json();
+      setErrorMessage(null);
       if (!res.ok) {
-        setStatus({
-          type: 'error',
-          text: data.error || 'Failed to load permission mappings.',
-        });
+        setErrorMessage(data.error || 'Failed to load permission mappings.');
         return;
       }
 
@@ -57,17 +63,17 @@ export function AdminPermissionsMapping() {
         setMappings(data.mappings);
         setSavedMappings(data.mappings);
       }
-      const nextCrewGroup = typeof data.crewGroup === 'string' && data.crewGroup ? data.crewGroup : null;
+      const nextCrewGroup =
+        typeof data.crewGroup === 'string' && data.crewGroup ? data.crewGroup : null;
       setCrewGroup(nextCrewGroup);
       setSavedCrewGroup(nextCrewGroup);
-      setAdminGroup(typeof data.adminGroup === 'string' && data.adminGroup ? data.adminGroup : null);
+      setAdminGroup(
+        typeof data.adminGroup === 'string' && data.adminGroup ? data.adminGroup : null
+      );
       setKeycloakGroups(Array.isArray(data.keycloakGroups) ? data.keycloakGroups : []);
       setKeycloakGroupsAvailable(Boolean(data.keycloakGroupsAvailable));
     } catch {
-      setStatus({
-        type: 'error',
-        text: 'Network error while loading permission mappings.',
-      });
+      setErrorMessage('Network error while loading permission mappings.');
     } finally {
       setLoading(false);
     }
@@ -79,11 +85,9 @@ export function AdminPermissionsMapping() {
       .then(async (res) => {
         const data = await res.json();
         if (cancelled) return;
+        setErrorMessage(null);
         if (!res.ok) {
-          setStatus({
-            type: 'error',
-            text: data.error || 'Failed to load permission mappings.',
-          });
+          setErrorMessage(data.error || 'Failed to load permission mappings.');
           return;
         }
         if (data.mappings) {
@@ -102,10 +106,7 @@ export function AdminPermissionsMapping() {
       })
       .catch(() => {
         if (!cancelled) {
-          setStatus({
-            type: 'error',
-            text: 'Network error while loading permission mappings.',
-          });
+          setErrorMessage('Network error while loading permission mappings.');
         }
       })
       .finally(() => {
@@ -113,7 +114,6 @@ export function AdminPermissionsMapping() {
           setLoading(false);
         }
       });
-
     return () => {
       cancelled = true;
     };
@@ -148,21 +148,24 @@ export function AdminPermissionsMapping() {
 
   const hasChanges = useMemo(
     () =>
-      JSON.stringify(mappings) !== JSON.stringify(savedMappings) || crewGroup !== savedCrewGroup,
+      JSON.stringify(mappings) !== JSON.stringify(savedMappings) ||
+      crewGroup !== savedCrewGroup,
     [mappings, savedMappings, crewGroup, savedCrewGroup]
   );
 
-  const handleChangePermissionGroups = (permission: PortalPermission, values: string[]) => {
+  const handleChangePermissionGroups = (
+    permission: PortalPermission,
+    values: string[]
+  ) => {
     setMappings((prev) => ({
       ...prev,
       [permission]: values.map(normalizeGroupIdentifier).filter(Boolean),
     }));
-    setStatus(null);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    setStatus(null);
+    setErrorMessage(null);
     try {
       const res = await fetch('/api/admin/permissions', {
         method: 'PUT',
@@ -171,10 +174,7 @@ export function AdminPermissionsMapping() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatus({
-          type: 'error',
-          text: data.error || 'Failed to save permission mappings.',
-        });
+        setErrorMessage(data.error || 'Failed to save permission mappings.');
         return;
       }
       if (data.mappings) {
@@ -185,53 +185,33 @@ export function AdminPermissionsMapping() {
         typeof data.crewGroup === 'string' && data.crewGroup ? data.crewGroup : null;
       setCrewGroup(nextCrewGroup);
       setSavedCrewGroup(nextCrewGroup);
-      setStatus({
-        type: 'success',
-        text: 'Permission mappings saved and active immediately.',
-      });
+      notifySuccess('Permission mappings saved.');
     } catch {
-      setStatus({
-        type: 'error',
-        text: 'Network error while saving permission mappings.',
-      });
+      setErrorMessage('Network error while saving permission mappings.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Paper
-      p={24}
-      radius="md"
-      withBorder
-      style={{
-        backgroundColor: 'var(--mantine-color-dark-7)',
-        borderColor: 'var(--mantine-color-dark-4)',
-      }}
-    >
-      <Stack gap="md">
-        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
-          <div>
-            <Group gap="xs" mb={4}>
-              <IconShieldLock size={18} color="var(--mantine-color-cyan-4)" />
-              <Text fw={700} size="md" c="white">
-                Permissions &amp; Keycloak Groups
-              </Text>
-              {adminGroup ? (
-                <Badge variant="light" color="cyan" size="xs">
-                  Super Admin: /{adminGroup}
-                </Badge>
-              ) : !loading ? (
-                <Badge variant="light" color="yellow" size="xs">
-                  ADMIN_GROUP not set
-                </Badge>
-              ) : null}
-            </Group>
-            <Text size="xs" c="dimmed">
-              Map Keycloak groups to portal pages and actions. The configured super-admin group
-              (ADMIN_GROUP) always retains full access.
+    <Paper p="lg" withBorder>
+      <Stack gap="lg">
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <Group gap="xs" wrap="wrap">
+            <Text fw={700} size="sm">
+              Permissions &amp; Keycloak Groups
             </Text>
-          </div>
+            <InfoTooltip label="Map Keycloak groups to portal permissions. The configured ADMIN_GROUP always retains full access." />
+            {adminGroup ? (
+              <Badge color="cyan" size="xs">
+                Super Admin: /{adminGroup}
+              </Badge>
+            ) : !loading ? (
+              <Badge color="yellow" size="xs">
+                ADMIN_GROUP not set
+              </Badge>
+            ) : null}
+          </Group>
 
           <Group gap="xs">
             <Button
@@ -240,7 +220,6 @@ export function AdminPermissionsMapping() {
               leftSection={<IconRefresh size={14} />}
               onClick={() => {
                 setLoading(true);
-                setStatus(null);
                 void loadPermissions();
               }}
               disabled={loading || saving}
@@ -249,11 +228,10 @@ export function AdminPermissionsMapping() {
             </Button>
             <Button
               size="xs"
-              color="cyan"
               leftSection={<IconCheck size={14} />}
               loading={saving}
               disabled={!hasChanges || loading}
-              onClick={handleSave}
+              onClick={() => void handleSave()}
             >
               Save Permissions
             </Button>
@@ -261,162 +239,125 @@ export function AdminPermissionsMapping() {
         </Group>
 
         {!loading && !adminGroup && (
-          <Paper
-            p="sm"
-            radius="sm"
-            withBorder
-            style={{
-              backgroundColor: 'rgba(250, 176, 5, 0.08)',
-              borderColor: 'var(--mantine-color-yellow-7)',
-            }}
-          >
-            <Text size="xs" c="yellow.3">
-              ADMIN_GROUP is not configured in environment variables. Ensure at least one group is
-              assigned to admin.portal.manage before logging out.
-            </Text>
-          </Paper>
+          <Alert color="yellow" icon={<IconAlertCircle size={16} />}>
+            ADMIN_GROUP is not configured in environment variables. Ensure at least one
+            group is assigned to <code>admin.portal.manage</code> before logging out.
+          </Alert>
         )}
 
         {!keycloakGroupsAvailable && (
-          <Paper
-            p="sm"
-            radius="sm"
-            withBorder
-            style={{
-              backgroundColor: 'rgba(250, 176, 5, 0.08)',
-              borderColor: 'var(--mantine-color-yellow-7)',
-            }}
-          >
-            <Text size="xs" c="yellow.3">
-              Keycloak groups could not be loaded. Existing mappings remain intact.
-            </Text>
-          </Paper>
+          <Alert color="yellow" icon={<IconAlertCircle size={16} />}>
+            Keycloak groups could not be loaded. Existing mappings remain intact.
+          </Alert>
         )}
 
-        {status && (
-          <Paper
-            p="sm"
-            radius="sm"
-            withBorder
-            style={{
-              backgroundColor:
-                status.type === 'error' ? 'rgba(250, 82, 82, 0.1)' : 'rgba(18, 184, 134, 0.1)',
-              borderColor:
-                status.type === 'error'
-                  ? 'var(--mantine-color-red-7)'
-                  : 'var(--mantine-color-teal-7)',
-            }}
-          >
-            <Text size="xs" c={status.type === 'error' ? 'red.3' : 'teal.3'}>
-              {status.text}
-            </Text>
-          </Paper>
+        {errorMessage && (
+          <Alert color="red" icon={<IconAlertCircle size={16} />}>
+            {errorMessage}
+          </Alert>
         )}
 
         {loading ? (
-          <Group py="md" justify="center">
+          <Group py="lg" justify="center">
             <Loader size="sm" color="cyan" />
             <Text size="sm" c="dimmed">
-              Loading permissions and Keycloak groups…
+              Loading permissions...
             </Text>
           </Group>
         ) : (
-          <Stack gap="lg">
-            <Stack gap="sm">
-              <div className="uppercase-label">Crew Onboarding</div>
-              <Paper
-                p="sm"
-                radius="sm"
-                withBorder
-                style={{
-                  backgroundColor: 'var(--mantine-color-dark-6)',
-                  borderColor: 'var(--mantine-color-dark-4)',
-                }}
-              >
-                <Group justify="space-between" align="center" wrap="wrap" gap="md">
-                  <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-                    <Group gap="xs" mb={2}>
-                      <Text size="sm" fw={600} c="white">
-                        Crew Base Group
-                      </Text>
-                      <Badge variant="outline" color="gray" size="xs">
-                        crewGroup
-                      </Badge>
-                    </Group>
-                    <Text size="xs" c="dimmed">
-                      Keycloak group assigned when promoting a user to Crew and removed on offboarding.
-                    </Text>
-                  </div>
-
-                  <Select
-                    aria-label="Crew Onboarding Keycloak Group"
-                    placeholder="Select Keycloak group…"
-                    data={groupOptions}
-                    value={crewGroup}
-                    onChange={(val) => {
-                      setCrewGroup(val ? normalizeGroupIdentifier(val) : null);
-                      setStatus(null);
-                    }}
-                    searchable
-                    clearable
-                    nothingFoundMessage="No matching group found"
-                    style={{ flex: '1 1 320px', minWidth: 240 }}
-                    size="xs"
-                  />
-                </Group>
-              </Paper>
-            </Stack>
+          <Stack gap="xl">
+            <div>
+              <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb="xs">
+                Crew Onboarding
+              </Text>
+              <Table.ScrollContainer minWidth={560}>
+                <Table withTableBorder>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th w="45%">Setting</Table.Th>
+                      <Table.Th>Keycloak Group</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    <Table.Tr>
+                      <Table.Td>
+                        <Group gap={6} wrap="nowrap">
+                          <Text size="sm" fw={600}>
+                            Crew Base Group
+                          </Text>
+                          <Code fz="xs">crewGroup</Code>
+                          <InfoTooltip label="Keycloak group assigned when promoting a user to Crew and removed on offboarding." />
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Select
+                          aria-label="Crew Onboarding Keycloak Group"
+                          placeholder="Select Keycloak group…"
+                          data={groupOptions}
+                          value={crewGroup}
+                          onChange={(val) =>
+                            setCrewGroup(val ? normalizeGroupIdentifier(val) : null)
+                          }
+                          searchable
+                          clearable
+                          nothingFoundMessage="No matching group found"
+                          size="xs"
+                        />
+                      </Table.Td>
+                    </Table.Tr>
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </div>
 
             {PERMISSION_SECTIONS.map((section) => {
               const items = PERMISSION_DEFINITIONS.filter((d) => d.section === section);
               return (
-                <Stack key={section} gap="sm">
-                  <Divider color="var(--mantine-color-dark-4)" />
-                  <div className="uppercase-label">{section}</div>
-                  <Stack gap="xs">
-                    {items.map((def) => (
-                      <Paper
-                        key={def.key}
-                        p="sm"
-                        radius="sm"
-                        withBorder
-                        style={{
-                          backgroundColor: 'var(--mantine-color-dark-6)',
-                          borderColor: 'var(--mantine-color-dark-4)',
-                        }}
-                      >
-                        <Group justify="space-between" align="center" wrap="wrap" gap="md">
-                          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-                            <Group gap="xs" mb={2}>
-                              <Text size="sm" fw={600} c="white">
-                                {def.label}
-                              </Text>
-                              <Badge variant="outline" color="gray" size="xs">
-                                {def.key}
-                              </Badge>
-                            </Group>
-                            <Text size="xs" c="dimmed">
-                              {def.description}
-                            </Text>
-                          </div>
-
-                          <MultiSelect
-                            aria-label={`Keycloak groups for ${def.label}`}
-                            placeholder="Select Keycloak groups…"
-                            data={groupOptions}
-                            value={mappings[def.key] || []}
-                            onChange={(vals) => handleChangePermissionGroups(def.key, vals)}
-                            searchable
-                            clearable
-                            nothingFoundMessage="No matching group found"
-                            style={{ flex: '1 1 320px', minWidth: 240 }}
-                            size="xs"
-                          />
-                        </Group>
-                      </Paper>
-                    ))}
-                  </Stack>
-                </Stack>
+                <div key={section}>
+                  <Text size="xs" fw={600} tt="uppercase" c="dimmed" mb="xs">
+                    {section}
+                  </Text>
+                  <Table.ScrollContainer minWidth={560}>
+                    <Table withTableBorder>
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th w="45%">Permission</Table.Th>
+                          <Table.Th>Keycloak Groups</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {items.map((def) => (
+                          <Table.Tr key={def.key}>
+                            <Table.Td>
+                              <Group gap={6} wrap="wrap">
+                                <Text size="sm" fw={600}>
+                                  {def.label}
+                                </Text>
+                                <Code fz="xs">{def.key}</Code>
+                                <InfoTooltip label={def.description} />
+                              </Group>
+                            </Table.Td>
+                            <Table.Td>
+                              <MultiSelect
+                                aria-label={`Keycloak groups for ${def.label}`}
+                                placeholder="Select Keycloak groups…"
+                                data={groupOptions}
+                                value={mappings[def.key] || []}
+                                onChange={(vals) =>
+                                  handleChangePermissionGroups(def.key, vals)
+                                }
+                                searchable
+                                clearable
+                                nothingFoundMessage="No matching group found"
+                                size="xs"
+                              />
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </Table.ScrollContainer>
+                </div>
               );
             })}
           </Stack>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
+  Alert,
   Badge,
   Button,
   Checkbox,
@@ -10,9 +11,12 @@ import {
   Paper,
   Select,
   Stack,
+  Table,
   Text,
 } from '@mantine/core';
-import { IconLink, IconRefresh } from '@tabler/icons-react';
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react';
+import { notifySuccess } from '@/lib/notify';
+import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 interface AdminDepartmentRow {
   id: number;
@@ -36,19 +40,15 @@ export function AdminDepartmentMapping() {
   const [selectedGroups, setSelectedGroups] = useState<Record<number, string | null>>({});
   const [syncMembers, setSyncMembers] = useState(true);
   const [savingId, setSavingId] = useState<number | null>(null);
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(
-    null
-  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadMappings = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/departments', { cache: 'no-store' });
       const data = await res.json();
+      setErrorMessage(null);
       if (!res.ok) {
-        setStatus({
-          type: 'error',
-          text: data.error || 'Failed to load department mappings.',
-        });
+        setErrorMessage(data.error || 'Failed to load department mappings.');
         return;
       }
       const depts: AdminDepartmentRow[] = Array.isArray(data.departments)
@@ -64,10 +64,7 @@ export function AdminDepartmentMapping() {
       }
       setSelectedGroups(initialSelections);
     } catch {
-      setStatus({
-        type: 'error',
-        text: 'Network error while loading department mappings.',
-      });
+      setErrorMessage('Network error while loading department mappings.');
     } finally {
       setLoading(false);
     }
@@ -79,11 +76,9 @@ export function AdminDepartmentMapping() {
       .then(async (res) => {
         const data = await res.json();
         if (cancelled) return;
+        setErrorMessage(null);
         if (!res.ok) {
-          setStatus({
-            type: 'error',
-            text: data.error || 'Failed to load department mappings.',
-          });
+          setErrorMessage(data.error || 'Failed to load department mappings.');
           return;
         }
         const depts: AdminDepartmentRow[] = Array.isArray(data.departments)
@@ -101,10 +96,7 @@ export function AdminDepartmentMapping() {
       })
       .catch(() => {
         if (!cancelled) {
-          setStatus({
-            type: 'error',
-            text: 'Network error while loading department mappings.',
-          });
+          setErrorMessage('Network error while loading department mappings.');
         }
       })
       .finally(() => {
@@ -128,7 +120,7 @@ export function AdminDepartmentMapping() {
 
   const handleSaveMapping = async (dept: AdminDepartmentRow) => {
     setSavingId(dept.id);
-    setStatus(null);
+    setErrorMessage(null);
     const chosenGroupId = selectedGroups[dept.id] ?? null;
     try {
       const res = await fetch(`/api/admin/departments/${dept.id}`, {
@@ -141,10 +133,7 @@ export function AdminDepartmentMapping() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatus({
-          type: 'error',
-          text: data.error || 'Failed to save mapping.',
-        });
+        setErrorMessage(data.error || 'Failed to save mapping.');
         return;
       }
 
@@ -152,50 +141,34 @@ export function AdminDepartmentMapping() {
         chosenGroupId && syncMembers
           ? ` (${data.syncedCount ?? 0} existing members synced)`
           : '';
-      setStatus({
-        type: 'success',
-        text: chosenGroupId
+      notifySuccess(
+        chosenGroupId
           ? `Department "${dept.name}" mapped to "${data.department?.keycloakGroupName}"${syncedInfo}.`
-          : `Keycloak mapping removed for "${dept.name}".`,
-      });
+          : `Keycloak mapping removed for "${dept.name}".`
+      );
       await loadMappings();
     } catch {
-      setStatus({
-        type: 'error',
-        text: 'Network error while saving mapping.',
-      });
+      setErrorMessage('Network error while saving mapping.');
     } finally {
       setSavingId(null);
     }
   };
 
   return (
-    <Paper
-      p={24}
-      radius="md"
-      withBorder
-      style={{
-        backgroundColor: 'var(--mantine-color-dark-7)',
-        borderColor: 'var(--mantine-color-dark-4)',
-      }}
-    >
+    <Paper p="lg" withBorder>
       <Stack gap="md">
         <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-          <div>
-            <Group gap="xs">
-              <IconLink size={18} color="var(--mantine-color-cyan-4)" />
-              <Text size="sm" fw={700} c="white">
-                Department ↔ Keycloak Group Mapping
-              </Text>
-            </Group>
-            <Text size="xs" c="dimmed" mt={2}>
-              Compare all FR-created departments against Keycloak groups and link them as needed
+          <Group gap="xs">
+            <Text size="sm" fw={700}>
+              Department Mapping
             </Text>
-          </div>
-          <Group gap="sm">
+            <InfoTooltip label="Link FR departments to Keycloak groups and optionally sync existing members on save." />
+          </Group>
+
+          <Group gap="sm" wrap="wrap">
             <Checkbox
               size="xs"
-              label="Sync existing members when linking"
+              label="Sync existing members"
               checked={syncMembers}
               onChange={(e) => setSyncMembers(e.currentTarget.checked)}
             />
@@ -215,113 +188,97 @@ export function AdminDepartmentMapping() {
         </Group>
 
         {!keycloakGroupsAvailable && !loading && (
-          <Text size="xs" c="red.4">
+          <Alert color="yellow" icon={<IconAlertCircle size={16} />}>
             Could not load Keycloak groups (verify service account role{' '}
             <code>query-groups</code>).
-          </Text>
+          </Alert>
         )}
 
-        {status && (
-          <Paper
-            p="sm"
-            radius="sm"
-            withBorder
-            style={{
-              backgroundColor:
-                status.type === 'success'
-                  ? 'rgba(18, 184, 134, 0.1)'
-                  : 'rgba(250, 82, 82, 0.1)',
-              borderColor:
-                status.type === 'success'
-                  ? 'rgba(18, 184, 134, 0.35)'
-                  : 'rgba(250, 82, 82, 0.35)',
-            }}
-          >
-            <Text size="xs" fw={600} c={status.type === 'success' ? 'teal.4' : 'red.4'}>
-              {status.text}
-            </Text>
-          </Paper>
+        {errorMessage && (
+          <Alert color="red" icon={<IconAlertCircle size={16} />}>
+            {errorMessage}
+          </Alert>
         )}
 
         {loading ? (
-          <Group justify="center" gap="sm" py="md">
+          <Group justify="center" gap="sm" py="lg">
             <Loader size="sm" color="cyan" />
             <Text size="sm" c="dimmed">
               Loading department mappings...
             </Text>
           </Group>
         ) : departments.length === 0 ? (
-          <Text size="xs" c="dimmed">
-            No departments have been created in the FR tab yet.
+          <Text size="sm" c="dimmed" ta="center" py="md">
+            No departments created yet.
           </Text>
         ) : (
-          <Stack gap="xs">
-            {departments.map((dept) => {
-              const currentSelection = selectedGroups[dept.id] ?? null;
-              const isChanged = currentSelection !== dept.keycloakGroupId;
-              return (
-                <Paper
-                  key={dept.id}
-                  p="sm"
-                  radius="sm"
-                  withBorder
-                  style={{
-                    backgroundColor: 'var(--mantine-color-dark-6)',
-                    borderColor: 'var(--mantine-color-dark-4)',
-                  }}
-                >
-                  <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                    <div style={{ minWidth: 180 }}>
-                      <Group gap="xs">
-                        <Text size="sm" fw={600} c="white">
-                          {dept.name}
-                        </Text>
-                        <Badge size="xs" variant="light" color="gray">
-                          {dept.memberCount} Crew
+          <Table.ScrollContainer minWidth={620}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Department</Table.Th>
+                  <Table.Th>Crew</Table.Th>
+                  <Table.Th>Keycloak Group</Table.Th>
+                  <Table.Th ta="right">Action</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {departments.map((dept) => {
+                  const currentSelection = selectedGroups[dept.id] ?? null;
+                  const isChanged = currentSelection !== dept.keycloakGroupId;
+                  return (
+                    <Table.Tr key={dept.id}>
+                      <Table.Td>
+                        <Group gap="xs" wrap="nowrap">
+                          <Text size="sm" fw={600}>
+                            {dept.name}
+                          </Text>
+                          {!dept.keycloakGroupName && (
+                            <Badge size="xs" color="yellow">
+                              Unlinked
+                            </Badge>
+                          )}
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge size="xs" color="gray">
+                          {dept.memberCount}
                         </Badge>
-                        {dept.keycloakGroupName ? (
-                          <Badge size="xs" variant="light" color="teal">
-                            KC: {dept.keycloakGroupName}
-                          </Badge>
-                        ) : (
-                          <Badge size="xs" variant="light" color="yellow">
-                            No Keycloak Group
-                          </Badge>
-                        )}
-                      </Group>
-                    </div>
-
-                    <Group gap="xs" wrap="nowrap" style={{ flex: 1, maxWidth: 460 }}>
-                      <Select
-                        placeholder="No Keycloak group (DB only)"
-                        data={groupOptions}
-                        value={currentSelection}
-                        onChange={(val) =>
-                          setSelectedGroups((prev) => ({
-                            ...prev,
-                            [dept.id]: val,
-                          }))
-                        }
-                        clearable
-                        searchable
-                        size="xs"
-                        style={{ flex: 1 }}
-                      />
-                      <Button
-                        size="xs"
-                        color="cyan"
-                        loading={savingId === dept.id}
-                        disabled={!isChanged && !currentSelection}
-                        onClick={() => handleSaveMapping(dept)}
-                      >
-                        Save
-                      </Button>
-                    </Group>
-                  </Group>
-                </Paper>
-              );
-            })}
-          </Stack>
+                      </Table.Td>
+                      <Table.Td>
+                        <Select
+                          placeholder="No Keycloak group (DB only)"
+                          data={groupOptions}
+                          value={currentSelection}
+                          onChange={(val) =>
+                            setSelectedGroups((prev) => ({
+                              ...prev,
+                              [dept.id]: val,
+                            }))
+                          }
+                          clearable
+                          searchable
+                          size="xs"
+                          maw={340}
+                        />
+                      </Table.Td>
+                      <Table.Td ta="right">
+                        <Button
+                          size="xs"
+                          variant={isChanged ? 'filled' : 'default'}
+                          loading={savingId === dept.id}
+                          disabled={!isChanged && !currentSelection}
+                          onClick={() => void handleSaveMapping(dept)}
+                        >
+                          Save
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         )}
       </Stack>
     </Paper>

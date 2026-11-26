@@ -2,24 +2,29 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
+  ActionIcon,
+  Alert,
   Badge,
   Button,
   Code,
   Group,
   Loader,
+  Modal,
+  Pagination,
   Paper,
   Select,
   Stack,
+  Table,
   Text,
   TextInput,
 } from '@mantine/core';
 import {
-  IconChevronDown,
-  IconChevronUp,
-  IconHistory,
+  IconAlertCircle,
+  IconCode,
   IconRefresh,
   IconSearch,
 } from '@tabler/icons-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface AuditLogItem {
   id: number;
@@ -60,7 +65,8 @@ export function AuditLogsWorkspace({
     return list;
   }, [canViewAll, canViewFr, canViewAdmin]);
 
-  const defaultCategory = allowedCategories.length > 1 ? 'all' : (allowedCategories[0] ?? 'fr');
+  const defaultCategory =
+    allowedCategories.length > 1 ? 'all' : (allowedCategories[0] ?? 'fr');
 
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
@@ -76,7 +82,7 @@ export function AuditLogsWorkspace({
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
+  const [metadataLog, setMetadataLog] = useState<AuditLogItem | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -87,19 +93,21 @@ export function AuditLogsWorkspace({
 
   const fetchLogs = useCallback(
     async (targetPage: number) => {
-      setErrorMessage(null);
       const params = new URLSearchParams();
       params.set('category', category);
       params.set('action', action);
-      if (searchQuery.trim()) params.set('q', searchQuery.trim());
+      if (debouncedSearchQuery.trim()) params.set('q', debouncedSearchQuery.trim());
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
       params.set('page', String(targetPage));
       params.set('pageSize', String(pageSize));
 
       try {
-        const res = await fetch(`/api/logs?${params.toString()}`, { cache: 'no-store' });
+        const res = await fetch(`/api/logs?${params.toString()}`, {
+          cache: 'no-store',
+        });
         const data = await res.json();
+        setErrorMessage(null);
         if (!res.ok) {
           setErrorMessage(data.error || 'Failed to load audit logs.');
           return;
@@ -115,7 +123,7 @@ export function AuditLogsWorkspace({
         setLoading(false);
       }
     },
-    [category, action, searchQuery, fromDate, toDate, pageSize]
+    [category, action, debouncedSearchQuery, fromDate, toDate, pageSize]
   );
 
   useEffect(() => {
@@ -133,6 +141,7 @@ export function AuditLogsWorkspace({
       .then(async (res) => {
         const data = await res.json();
         if (cancelled) return;
+        setErrorMessage(null);
         if (!res.ok) {
           setErrorMessage(data.error || 'Failed to load audit logs.');
           return;
@@ -153,7 +162,6 @@ export function AuditLogsWorkspace({
           setLoading(false);
         }
       });
-
     return () => {
       cancelled = true;
     };
@@ -186,147 +194,98 @@ export function AuditLogsWorkspace({
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const toggleDetails = (id: number) => {
-    setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   return (
-    <Stack gap={24}>
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
-        <div>
-          <Text size="xl" fw={700} c="white">
-            Audit Logs
-          </Text>
-          <Text size="sm" c="dimmed">
-            {canViewAll
-              ? 'Complete activity history across FR, Administration, and Profile'
-              : canViewFr && canViewAdmin
-              ? 'Activity history for Furry Resources and Administration'
-              : canViewAdmin
-              ? 'Activity history for Administration and Portal Settings'
-              : 'Activity history for Furry Resources (crew promotions, roles, and departments)'}
-          </Text>
-        </div>
-        <Button
-          variant="default"
-          size="xs"
-          leftSection={<IconRefresh size={14} />}
-          onClick={() => {
-            setLoading(true);
-            void fetchLogs(page);
-          }}
-          loading={loading}
-        >
-          Refresh
-        </Button>
-      </Group>
+    <>
+      <Stack gap="lg">
+        <PageHeader
+          title="Audit Logs"
+          badge={`${total} total`}
+          actions={
+            <Button
+              variant="default"
+              size="xs"
+              leftSection={<IconRefresh size={14} />}
+              onClick={() => {
+                setLoading(true);
+                void fetchLogs(page);
+              }}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          }
+        />
 
-      {/* Filter Bar */}
-      <Paper
-        p={24}
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
-          borderColor: 'var(--mantine-color-dark-4)',
-        }}
-      >
-        <Group gap="sm" align="flex-end" wrap="wrap">
-          <Select
-            label="Category"
-            data={categoryOptions}
-            value={category}
-            onChange={(val) => {
-              setCategory(val || defaultCategory);
-              setPage(1);
-            }}
-            disabled={categoryOptions.length <= 1}
-            style={{ minWidth: 180 }}
-          />
-          <Select
-            label="Action"
-            data={actionOptions}
-            value={action}
-            onChange={(val) => {
-              setAction(val || 'all');
-              setPage(1);
-            }}
-            searchable
-            style={{ minWidth: 200 }}
-          />
-          <TextInput
-            label="Search"
-            placeholder="Actor, target, or summary..."
-            leftSection={<IconSearch size={14} />}
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setPage(1);
-            }}
-            style={{ flex: 1, minWidth: 200 }}
-          />
-          <TextInput
-            label="From"
-            type="date"
-            value={fromDate}
-            onChange={(e) => {
-              setFromDate(e.target.value);
-              setPage(1);
-            }}
-            style={{ minWidth: 140 }}
-          />
-          <TextInput
-            label="To"
-            type="date"
-            value={toDate}
-            onChange={(e) => {
-              setToDate(e.target.value);
-              setPage(1);
-            }}
-            style={{ minWidth: 140 }}
-          />
-        </Group>
-      </Paper>
-
-      {errorMessage && (
-        <Paper
-          p="sm"
-          radius="sm"
-          withBorder
-          style={{
-            backgroundColor: 'rgba(250, 82, 82, 0.1)',
-            borderColor: 'rgba(250, 82, 82, 0.35)',
-          }}
-        >
-          <Text size="xs" fw={600} c="red.4">
-            {errorMessage}
-          </Text>
-        </Paper>
-      )}
-
-      {/* Logs List */}
-      <Paper
-        p={24}
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
-          borderColor: 'var(--mantine-color-dark-4)',
-        }}
-      >
-        <Stack gap="md">
-          <Group justify="space-between" align="center">
-            <Group gap="xs">
-              <IconHistory size={18} color="var(--mantine-color-cyan-4)" />
-              <Text size="md" fw={700} c="white">
-                Recorded Events
-              </Text>
-            </Group>
-            <Badge color="cyan" variant="light">
-              {total} total
-            </Badge>
+        <Paper p="md" withBorder>
+          <Group gap="sm" align="flex-end" wrap="wrap">
+            <Select
+              label="Category"
+              size="xs"
+              data={categoryOptions}
+              value={category}
+              onChange={(val) => {
+                setCategory(val || defaultCategory);
+                setPage(1);
+              }}
+              disabled={categoryOptions.length <= 1}
+              miw={170}
+            />
+            <Select
+              label="Action"
+              size="xs"
+              data={actionOptions}
+              value={action}
+              onChange={(val) => {
+                setAction(val || 'all');
+                setPage(1);
+              }}
+              searchable
+              miw={190}
+            />
+            <TextInput
+              label="Search"
+              size="xs"
+              placeholder="Actor, target, or summary..."
+              leftSection={<IconSearch size={14} />}
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              style={{ flex: 1, minWidth: 200 }}
+            />
+            <TextInput
+              label="From"
+              size="xs"
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setPage(1);
+              }}
+              miw={135}
+            />
+            <TextInput
+              label="To"
+              size="xs"
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setPage(1);
+              }}
+              miw={135}
+            />
           </Group>
+        </Paper>
 
+        {errorMessage && (
+          <Alert color="red" icon={<IconAlertCircle size={16} />}>
+            {errorMessage}
+          </Alert>
+        )}
+
+        <Paper p="lg" withBorder>
           {loading ? (
             <Group justify="center" gap="sm" py="xl">
               <Loader size="sm" color="cyan" />
@@ -335,125 +294,115 @@ export function AuditLogsWorkspace({
               </Text>
             </Group>
           ) : logs.length === 0 ? (
-            <Text size="sm" c="dimmed" py="md" ta="center">
+            <Text size="sm" c="dimmed" py="lg" ta="center">
               No audit log entries match your current filters.
             </Text>
           ) : (
-            <Stack gap="xs">
-              {logs.map((log) => {
-                const isExpanded = Boolean(expandedIds[log.id]);
-                const hasMetadata = Boolean(
-                  log.metadata && Object.keys(log.metadata).length > 0
-                );
-                const formattedTime = new Date(log.createdAt).toLocaleString();
-
-                return (
-                  <Paper
-                    key={log.id}
-                    p="sm"
-                    radius="sm"
-                    withBorder
-                    style={{
-                      backgroundColor: 'var(--mantine-color-dark-6)',
-                      borderColor: 'var(--mantine-color-dark-4)',
-                    }}
-                  >
-                    <Stack gap="xs">
-                      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
-                        <div style={{ flex: 1, minWidth: 240 }}>
-                          <Group gap="xs" wrap="wrap" mb={4}>
+            <Stack gap="md">
+              <Table.ScrollContainer minWidth={780}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Time</Table.Th>
+                      <Table.Th>Category</Table.Th>
+                      <Table.Th>Action</Table.Th>
+                      <Table.Th>Summary</Table.Th>
+                      <Table.Th>Actor / Target</Table.Th>
+                      <Table.Th ta="right">Metadata</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {logs.map((log) => {
+                      const hasMetadata = Boolean(
+                        log.metadata && Object.keys(log.metadata).length > 0
+                      );
+                      return (
+                        <Table.Tr key={log.id}>
+                          <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                            <Text size="xs" c="dimmed">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
                             <Badge
                               size="xs"
-                              variant="light"
                               color={CATEGORY_COLORS[log.category] || 'gray'}
                             >
                               {log.category.toUpperCase()}
                             </Badge>
-                            <Badge size="xs" variant="outline" color="gray">
-                              {log.action}
-                            </Badge>
-                            <Text size="xs" c="dimmed">
-                              {formattedTime}
-                            </Text>
-                          </Group>
-                          <Text size="sm" fw={600} c="white">
-                            {log.summary}
-                          </Text>
-                          <Text size="xs" c="dimmed" mt={2}>
-                            Actor:{' '}
-                            <strong style={{ color: '#fff' }}>
+                          </Table.Td>
+                          <Table.Td>
+                            <Code fz="xs">{log.action}</Code>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="sm">{log.summary}</Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs">
                               {log.actorUsername || log.actorUserId || 'System'}
-                            </strong>
+                            </Text>
                             {log.targetLabel && (
-                              <>
-                                {' '}
-                                • Target:{' '}
-                                <strong style={{ color: '#fff' }}>
-                                  {log.targetLabel}
-                                </strong>
-                              </>
+                              <Text size="xs" c="dimmed">
+                                → {log.targetLabel}
+                              </Text>
                             )}
-                          </Text>
-                        </div>
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            {hasMetadata ? (
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                aria-label="View metadata"
+                                title="View metadata"
+                                onClick={() => setMetadataLog(log)}
+                              >
+                                <IconCode size={14} />
+                              </ActionIcon>
+                            ) : (
+                              <Text size="xs" c="dimmed">
+                                —
+                              </Text>
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
 
-                        {hasMetadata && (
-                          <Button
-                            size="xs"
-                            variant="default"
-                            rightSection={
-                              isExpanded ? (
-                                <IconChevronUp size={14} />
-                              ) : (
-                                <IconChevronDown size={14} />
-                              )
-                            }
-                            onClick={() => toggleDetails(log.id)}
-                          >
-                            Details
-                          </Button>
-                        )}
-                      </Group>
-
-                      {hasMetadata && isExpanded && (
-                        <Code block style={{ fontSize: 12 }}>
-                          {JSON.stringify(log.metadata, null, 2)}
-                        </Code>
-                      )}
-                    </Stack>
-                  </Paper>
-                );
-              })}
+              {total > pageSize && (
+                <Group justify="space-between" align="center" wrap="wrap">
+                  <Text size="xs" c="dimmed">
+                    Page {page} of {totalPages}
+                  </Text>
+                  <Pagination
+                    total={totalPages}
+                    value={page}
+                    onChange={setPage}
+                    size="sm"
+                    disabled={loading}
+                  />
+                </Group>
+              )}
             </Stack>
           )}
+        </Paper>
+      </Stack>
 
-          {/* Pagination */}
-          {total > pageSize && (
-            <Group justify="space-between" align="center" pt="xs">
-              <Text size="xs" c="dimmed">
-                Page {page} of {totalPages}
-              </Text>
-              <Group gap="xs">
-                <Button
-                  size="xs"
-                  variant="default"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  size="xs"
-                  variant="default"
-                  disabled={page >= totalPages || loading}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Next
-                </Button>
-              </Group>
-            </Group>
-          )}
-        </Stack>
-      </Paper>
-    </Stack>
+      <Modal
+        opened={Boolean(metadataLog)}
+        onClose={() => setMetadataLog(null)}
+        title={`Event Metadata — ${metadataLog?.action ?? ''}`}
+        size="lg"
+      >
+        {metadataLog?.metadata && (
+          <Code block fz="xs">
+            {JSON.stringify(metadataLog.metadata, null, 2)}
+          </Code>
+        )}
+      </Modal>
+    </>
   );
 }

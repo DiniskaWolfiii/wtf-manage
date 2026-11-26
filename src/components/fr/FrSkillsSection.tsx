@@ -6,7 +6,6 @@ import {
   Avatar,
   Badge,
   Button,
-  Divider,
   Group,
   Loader,
   Modal,
@@ -14,22 +13,28 @@ import {
   Pill,
   Select,
   Stack,
+  Table,
   TagsInput,
   Text,
   TextInput,
 } from '@mantine/core';
 import { IconEdit, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { getSafeAvatarUrl } from '@/lib/validation';
-import {
-  DARK_MODAL_STYLES,
-  type FrStatusMessage,
-  type FrUserItem,
-  type SkillCatalogItem,
+import type {
+  FrStatusMessage,
+  FrUserItem,
+  SkillCatalogItem,
 } from '@/components/fr/types';
 
 const LEVEL_PRESETS: Array<{ label: string; levels: string[] }> = [
-  { label: 'Basic / Intermediate / Advanced', levels: ['Basic', 'Intermediate', 'Advanced'] },
-  { label: 'Language (A1–C2, Native)', levels: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'Native'] },
+  {
+    label: 'Basic / Intermediate / Advanced',
+    levels: ['Basic', 'Intermediate', 'Advanced'],
+  },
+  {
+    label: 'Language (A1–C2, Native)',
+    levels: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'Native'],
+  },
   { label: 'Certified / Lead', levels: ['Trained', 'Certified', 'Lead'] },
 ];
 
@@ -48,24 +53,25 @@ export function FrSkillsSection({
   onRefresh: () => Promise<void>;
   onStatusMessage: (msg: FrStatusMessage | null) => void;
 }) {
-  // Create Skill form
+  const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('General');
-  const [newLevels, setNewLevels] = useState<string[]>(['Basic', 'Intermediate', 'Advanced']);
+  const [newLevels, setNewLevels] = useState<string[]>([
+    'Basic',
+    'Intermediate',
+    'Advanced',
+  ]);
   const [creating, setCreating] = useState(false);
 
-  // Edit Skill modal
   const [editTarget, setEditTarget] = useState<SkillCatalogItem | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editLevels, setEditLevels] = useState<string[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // Delete Skill modal
   const [deleteTarget, setDeleteTarget] = useState<SkillCatalogItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Skill Finder state
   const [finderSkillId, setFinderSkillId] = useState<string | null>(null);
   const [finderLevel, setFinderLevel] = useState<string | null>(null);
   const [finderSearch, setFinderSearch] = useState('');
@@ -124,6 +130,8 @@ export function FrSkillsSection({
         return;
       }
       setNewName('');
+      setNewCategory('General');
+      setCreateOpen(false);
       onStatusMessage({
         type: 'success',
         text: `Skill "${data.skill.name}" created.`,
@@ -220,198 +228,126 @@ export function FrSkillsSection({
 
   return (
     <>
-      <Stack gap={24}>
+      <Stack gap="lg">
         {/* Skill Catalog */}
-        <Paper
-          p={24}
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: 'var(--mantine-color-dark-7)',
-            borderColor: 'var(--mantine-color-dark-4)',
-          }}
-        >
+        <Paper p="lg" withBorder>
           <Stack gap="md">
-            <div>
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
               <Group gap="xs">
-                <Text size="md" fw={700} c="white">
+                <Text size="sm" fw={700}>
                   Skill Catalog
                 </Text>
-                <Badge size="xs" variant="light" color="cyan">
+                <Badge size="xs" color="cyan">
                   {skillsCatalog.length}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">
-                Define skills and their selectable proficiency levels for crew assignments
-              </Text>
-            </div>
 
-            {canWrite && (
-              <>
-                <form onSubmit={handleCreateSkill}>
-                  <Stack gap="sm">
-                    <Group gap="sm" align="flex-end" wrap="wrap">
-                      <TextInput
-                        label="Skill Name"
-                        placeholder="e.g. First Aid, German, Radio Ops"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        maxLength={80}
-                        style={{ flex: 1, minWidth: 200 }}
-                      />
-                      <TextInput
-                        label="Category"
-                        placeholder="e.g. Medical, Language, Ops"
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        maxLength={60}
-                        style={{ flex: 1, minWidth: 160 }}
-                      />
-                    </Group>
-
-                    <TagsInput
-                      label="Allowed Levels (press Enter to add)"
-                      placeholder="Add level..."
-                      value={newLevels}
-                      onChange={setNewLevels}
-                      clearable
-                    />
-
-                    <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                      <Group gap="xs" wrap="wrap">
-                        <Text size="xs" c="dimmed">
-                          Presets:
-                        </Text>
-                        {LEVEL_PRESETS.map((preset) => (
-                          <Button
-                            key={preset.label}
-                            size="compact-xs"
-                            variant="default"
-                            onClick={() => setNewLevels(preset.levels)}
-                          >
-                            {preset.label}
-                          </Button>
-                        ))}
-                      </Group>
-                      <Button
-                        type="submit"
-                        color="cyan"
-                        leftSection={<IconPlus size={14} />}
-                        loading={creating}
-                        disabled={!newName.trim() || newLevels.length === 0}
-                      >
-                        Create Skill
-                      </Button>
-                    </Group>
-                  </Stack>
-                </form>
-
-                <Divider color="var(--mantine-color-dark-4)" />
-              </>
-            )}
+              {canWrite && (
+                <Button
+                  size="xs"
+                  leftSection={<IconPlus size={14} />}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Create Skill
+                </Button>
+              )}
+            </Group>
 
             {loading ? (
-              <Group justify="center" gap="sm" py="md">
+              <Group justify="center" gap="sm" py="lg">
                 <Loader size="sm" color="cyan" />
                 <Text size="sm" c="dimmed">
                   Loading skills...
                 </Text>
               </Group>
             ) : skillsCatalog.length === 0 ? (
-              <Text size="xs" c="dimmed">
-                No skills defined yet. Add your first skill above.
+              <Text size="sm" c="dimmed" py="md" ta="center">
+                No skills defined yet.
               </Text>
             ) : (
-              <Stack gap="xs">
-                {skillsCatalog.map((skill) => (
-                  <Paper
-                    key={skill.id}
-                    p="sm"
-                    radius="sm"
-                    withBorder
-                    style={{
-                      backgroundColor: 'var(--mantine-color-dark-6)',
-                      borderColor: 'var(--mantine-color-dark-4)',
-                    }}
-                  >
-                    <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <Group gap="xs" wrap="wrap">
-                          <Text size="sm" fw={600} c="white">
+              <Table.ScrollContainer minWidth={560}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Skill</Table.Th>
+                      <Table.Th>Category</Table.Th>
+                      <Table.Th>Levels</Table.Th>
+                      {canWrite && <Table.Th ta="right">Actions</Table.Th>}
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {skillsCatalog.map((skill) => (
+                      <Table.Tr key={skill.id}>
+                        <Table.Td>
+                          <Text size="sm" fw={600}>
                             {skill.name}
                           </Text>
-                          <Badge size="xs" variant="light" color="gray">
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge size="xs" color="gray">
                             {skill.category}
                           </Badge>
-                        </Group>
-                        <Group gap={6} mt={6}>
-                          {skill.levels.map((lvl) => (
-                            <Pill key={lvl} size="xs">
-                              {lvl}
-                            </Pill>
-                          ))}
-                        </Group>
-                      </div>
-                      {canWrite && (
-                        <Group gap={4} wrap="nowrap">
-                          <ActionIcon
-                            variant="subtle"
-                            color="gray"
-                            size="sm"
-                            title="Edit skill"
-                            aria-label="Edit skill"
-                            onClick={() => {
-                              setEditTarget(skill);
-                              setEditName(skill.name);
-                              setEditCategory(skill.category);
-                              setEditLevels(skill.levels);
-                            }}
-                          >
-                            <IconEdit size={14} />
-                          </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            title="Delete skill"
-                            aria-label="Delete skill"
-                            onClick={() => setDeleteTarget(skill)}
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Group>
-                      )}
-                    </Group>
-                  </Paper>
-                ))}
-              </Stack>
+                        </Table.Td>
+                        <Table.Td>
+                          <Group gap={4} wrap="wrap">
+                            {skill.levels.map((lvl) => (
+                              <Pill key={lvl} size="xs">
+                                {lvl}
+                              </Pill>
+                            ))}
+                          </Group>
+                        </Table.Td>
+                        {canWrite && (
+                          <Table.Td ta="right">
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                title="Edit skill"
+                                aria-label="Edit skill"
+                                onClick={() => {
+                                  setEditTarget(skill);
+                                  setEditName(skill.name);
+                                  setEditCategory(skill.category);
+                                  setEditLevels(skill.levels);
+                                }}
+                              >
+                                <IconEdit size={14} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                title="Delete skill"
+                                aria-label="Delete skill"
+                                onClick={() => setDeleteTarget(skill)}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </Group>
+                          </Table.Td>
+                        )}
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
             )}
           </Stack>
         </Paper>
 
         {/* Skill Finder */}
-        <Paper
-          p={24}
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: 'var(--mantine-color-dark-7)',
-            borderColor: 'var(--mantine-color-dark-4)',
-          }}
-        >
+        <Paper p="lg" withBorder>
           <Stack gap="md">
-            <div>
-              <Text size="md" fw={700} c="white">
-                Skill Finder
-              </Text>
-              <Text size="xs" c="dimmed">
-                Filter active crew members by skill and proficiency level
-              </Text>
-            </div>
+            <Text size="sm" fw={700}>
+              Skill Finder
+            </Text>
 
             <Group gap="sm" wrap="wrap">
               <Select
                 placeholder="Filter by skill..."
+                size="xs"
                 data={skillOptions}
                 value={finderSkillId}
                 onChange={(val) => {
@@ -424,6 +360,7 @@ export function FrSkillsSection({
               />
               <Select
                 placeholder="Any level"
+                size="xs"
                 data={selectedFinderSkill?.levels ?? []}
                 value={finderLevel}
                 onChange={setFinderLevel}
@@ -433,6 +370,7 @@ export function FrSkillsSection({
               />
               <TextInput
                 placeholder="Search username..."
+                size="xs"
                 leftSection={<IconSearch size={14} />}
                 value={finderSearch}
                 onChange={(e) => setFinderSearch(e.target.value)}
@@ -448,75 +386,150 @@ export function FrSkillsSection({
                 </Text>
               </Group>
             ) : matchingCrew.length === 0 ? (
-              <Text size="xs" c="dimmed" py="sm" ta="center">
+              <Text size="sm" c="dimmed" py="md" ta="center">
                 No crew members match the selected skill filter.
               </Text>
             ) : (
-              <Stack gap="xs">
-                {matchingCrew.map((u) => {
-                  const safeAvatar = getSafeAvatarUrl(u.avatarUrl);
-                  return (
-                    <Paper
-                      key={u.id}
-                      p="sm"
-                      radius="sm"
-                      withBorder
-                      style={{
-                        backgroundColor: 'var(--mantine-color-dark-6)',
-                        borderColor: 'var(--mantine-color-dark-4)',
-                      }}
-                    >
-                      <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                        <Group gap="sm" style={{ minWidth: 180 }}>
-                          <Avatar
-                            src={safeAvatar ?? undefined}
-                            radius="xl"
-                            size="sm"
-                            color="cyan"
-                          >
-                            {u.username.slice(0, 2).toUpperCase()}
-                          </Avatar>
-                          <Text size="sm" fw={600} c="white">
-                            {u.username}
-                          </Text>
-                        </Group>
-                        <Group gap={6} wrap="wrap">
-                          {u.skills.length > 0 ? (
-                            u.skills.map((s) => (
-                              <Badge
-                                key={s.skillId}
-                                size="xs"
-                                variant={
-                                  finderSkillId === String(s.skillId) ? 'filled' : 'light'
-                                }
+              <Table.ScrollContainer minWidth={480}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Member</Table.Th>
+                      <Table.Th>Skills</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {matchingCrew.map((u) => {
+                      const safeAvatar = getSafeAvatarUrl(u.avatarUrl);
+                      return (
+                        <Table.Tr key={u.id}>
+                          <Table.Td>
+                            <Group gap="sm" wrap="nowrap">
+                              <Avatar
+                                src={safeAvatar ?? undefined}
+                                radius="xl"
+                                size="sm"
                                 color="cyan"
                               >
-                                {s.skillName} - {s.level}
-                              </Badge>
-                            ))
-                          ) : (
-                            <Text size="xs" c="dimmed">
-                              No skills assigned
-                            </Text>
-                          )}
-                        </Group>
-                      </Group>
-                    </Paper>
-                  );
-                })}
-              </Stack>
+                                {u.username.slice(0, 2).toUpperCase()}
+                              </Avatar>
+                              <Text size="sm" fw={600}>
+                                {u.username}
+                              </Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td>
+                            {u.skills.length > 0 ? (
+                              <Group gap={4} wrap="wrap">
+                                {u.skills.map((s) => (
+                                  <Badge
+                                    key={s.skillId}
+                                    size="xs"
+                                    variant={
+                                      finderSkillId === String(s.skillId)
+                                        ? 'filled'
+                                        : 'light'
+                                    }
+                                    color="cyan"
+                                  >
+                                    {s.skillName} · {s.level}
+                                  </Badge>
+                                ))}
+                              </Group>
+                            ) : (
+                              <Text size="xs" c="dimmed">
+                                —
+                              </Text>
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
             )}
           </Stack>
         </Paper>
       </Stack>
+
+      {/* Modal: Create Skill */}
+      <Modal
+        opened={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create Skill"
+        size="lg"
+      >
+        <form onSubmit={handleCreateSkill}>
+          <Stack gap="md">
+            <Group gap="sm" grow>
+              <TextInput
+                label="Skill Name"
+                placeholder="e.g. First Aid, German, Radio Ops"
+                required
+                maxLength={80}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+              <TextInput
+                label="Category"
+                placeholder="e.g. Medical, Language, Ops"
+                maxLength={60}
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+              />
+            </Group>
+
+            <TagsInput
+              label="Allowed Levels (press Enter to add)"
+              placeholder="Add level..."
+              value={newLevels}
+              onChange={setNewLevels}
+              clearable
+            />
+
+            <Group gap="xs" wrap="wrap">
+              <Text size="xs" c="dimmed">
+                Presets:
+              </Text>
+              {LEVEL_PRESETS.map((preset) => (
+                <Button
+                  key={preset.label}
+                  size="compact-xs"
+                  variant="default"
+                  onClick={() => setNewLevels(preset.levels)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </Group>
+
+            <Group justify="flex-end" gap="xs">
+              <Button
+                variant="default"
+                size="xs"
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="xs"
+                loading={creating}
+                disabled={!newName.trim() || newLevels.length === 0}
+              >
+                Create Skill
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
 
       {/* Modal: Edit Skill */}
       <Modal
         opened={Boolean(editTarget)}
         onClose={() => setEditTarget(null)}
         title="Edit Skill"
-        centered
-        styles={DARK_MODAL_STYLES}
       >
         <form onSubmit={handleSaveEdit}>
           <Stack gap="md">
@@ -540,12 +553,15 @@ export function FrSkillsSection({
               onChange={setEditLevels}
             />
             <Group justify="flex-end" gap="xs">
-              <Button variant="default" size="xs" onClick={() => setEditTarget(null)}>
+              <Button
+                variant="default"
+                size="xs"
+                onClick={() => setEditTarget(null)}
+              >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                color="cyan"
                 size="xs"
                 loading={savingEdit}
                 disabled={!editName.trim() || editLevels.length === 0}
@@ -562,24 +578,28 @@ export function FrSkillsSection({
         opened={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         title="Delete Skill"
-        centered
-        styles={DARK_MODAL_STYLES}
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Are you sure you want to delete the skill{' '}
-            <strong style={{ color: '#fff' }}>{deleteTarget?.name}</strong>? All crew skill
-            assignments for this skill will also be removed.
+            Delete skill{' '}
+            <strong style={{ color: 'var(--mantine-color-white)' }}>
+              {deleteTarget?.name}
+            </strong>
+            ? All crew skill assignments for this skill will also be removed.
           </Text>
           <Group justify="flex-end" gap="xs">
-            <Button variant="default" size="xs" onClick={() => setDeleteTarget(null)}>
+            <Button
+              variant="default"
+              size="xs"
+              onClick={() => setDeleteTarget(null)}
+            >
               Cancel
             </Button>
             <Button
               color="red"
               size="xs"
               loading={deleting}
-              onClick={handleDeleteSkill}
+              onClick={() => void handleDeleteSkill()}
             >
               Delete Permanently
             </Button>

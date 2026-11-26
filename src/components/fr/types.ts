@@ -50,8 +50,3 @@ export interface FrStatusMessage {
   type: 'success' | 'error';
   text: string;
 }
-
-export const DARK_MODAL_STYLES = {
-  content: { backgroundColor: 'var(--mantine-color-dark-7)' },
-  header: { backgroundColor: 'var(--mantine-color-dark-7)', color: '#fff' },
-};

@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Group, Paper, Stack, Text } from '@mantine/core';
-import { IconAlertCircle, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
+import { Alert, Button, Stack } from '@mantine/core';
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react';
 import { FrCrewDetailView } from '@/components/fr/FrCrewDetailView';
 import { FrCrewSection } from '@/components/fr/FrCrewSection';
 import { FrDepartmentsSection } from '@/components/fr/FrDepartmentsSection';
 import { FrSkillsSection } from '@/components/fr/FrSkillsSection';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import type {
   DepartmentItem,
   FrSection,
@@ -15,19 +17,10 @@ import type {
   SkillCatalogItem,
 } from '@/components/fr/types';
 
-const SECTION_META: Record<FrSection, { title: string; subtitle: string }> = {
-  crew: {
-    title: 'Crew Management',
-    subtitle: 'Onboard crew members, inspect profiles, and assign departments & skills',
-  },
-  departments: {
-    title: 'Departments',
-    subtitle: 'Organize departments, hierarchy, and member rankings for the Org Chart',
-  },
-  skills: {
-    title: 'Skills & Catalog',
-    subtitle: 'Define FR-managed skills with custom proficiency levels and find qualified crew',
-  },
+const SECTION_TITLES: Record<FrSection, string> = {
+  crew: 'Crew Management',
+  departments: 'Departments',
+  skills: 'Skills',
 };
 
 export function FrWorkspace({
@@ -52,21 +45,32 @@ export function FrWorkspace({
   const [users, setUsers] = useState<FrUserItem[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [skillsCatalog, setSkillsCatalog] = useState<SkillCatalogItem[]>([]);
-  const [statusMessage, setStatusMessage] = useState<FrStatusMessage | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleStatusMessage = useCallback((msg: FrStatusMessage | null) => {
+    if (!msg) {
+      setErrorMessage(null);
+      return;
+    }
+    if (msg.type === 'success') {
+      setErrorMessage(null);
+      notifySuccess(msg.text);
+    } else {
+      setErrorMessage(msg.text);
+      notifyError(msg.text);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     if (detailUserId) {
-      setLoading(false);
       return;
     }
     try {
       const res = await fetch('/api/fr/crew', { cache: 'no-store' });
       const data = await res.json();
+      setErrorMessage(null);
       if (!res.ok) {
-        setStatusMessage({
-          type: 'error',
-          text: data.error || 'Failed to load FR crew data.',
-        });
+        setErrorMessage(data.error || 'Failed to load FR crew data.');
         return;
       }
       setCrewGroupConfigured(Boolean(data.crewGroupConfigured));
@@ -74,10 +78,7 @@ export function FrWorkspace({
       setDepartments(Array.isArray(data.departments) ? data.departments : []);
       setSkillsCatalog(Array.isArray(data.skillsCatalog) ? data.skillsCatalog : []);
     } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Network error while loading FR crew data.',
-      });
+      setErrorMessage('Network error while loading FR crew data.');
     } finally {
       setLoading(false);
     }
@@ -90,11 +91,9 @@ export function FrWorkspace({
       .then(async (res) => {
         const data = await res.json();
         if (cancelled) return;
+        setErrorMessage(null);
         if (!res.ok) {
-          setStatusMessage({
-            type: 'error',
-            text: data.error || 'Failed to load FR crew data.',
-          });
+          setErrorMessage(data.error || 'Failed to load FR crew data.');
           return;
         }
         setCrewGroupConfigured(Boolean(data.crewGroupConfigured));
@@ -104,10 +103,7 @@ export function FrWorkspace({
       })
       .catch(() => {
         if (!cancelled) {
-          setStatusMessage({
-            type: 'error',
-            text: 'Network error while loading FR crew data.',
-          });
+          setErrorMessage('Network error while loading FR crew data.');
         }
       })
       .finally(() => {
@@ -130,113 +126,43 @@ export function FrWorkspace({
     );
   }
 
-  const meta = SECTION_META[section];
-
   return (
-    <Stack gap={24}>
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
-        <div>
-          <Text size="xl" fw={700} c="white">
-            Furry Resources — {meta.title}
-          </Text>
-          <Text size="sm" c="dimmed">
-            {meta.subtitle}
-          </Text>
-        </div>
-        <Button
-          variant="default"
-          size="xs"
-          leftSection={<IconRefresh size={14} />}
-          onClick={() => {
-            setLoading(true);
-            void loadData();
-          }}
-          loading={loading}
-        >
-          Refresh
-        </Button>
-      </Group>
-
-      {/* Re-login info banner (relevant for Crew & Department Keycloak sync) */}
-      {section !== 'skills' && (
-        <Paper
-          p="sm"
-          radius="sm"
-          withBorder
-          style={{
-            backgroundColor: 'rgba(21, 170, 191, 0.08)',
-            borderColor: 'rgba(21, 170, 191, 0.35)',
-          }}
-        >
-          <Group gap="xs" wrap="nowrap" align="flex-start">
-            <IconInfoCircle
-              size={18}
-              color="var(--mantine-color-cyan-4)"
-              style={{ flexShrink: 0, marginTop: 1 }}
-            />
-            <Text size="xs" c="cyan.2">
-              <strong>Re-login Notice:</strong> Changes to Crew status (group{' '}
-              <code>wtf-crew</code>) or Keycloak-mapped departments only take effect for the
-              affected user after a <strong>re-login</strong> (or token refresh). Please pass this
-              on after making changes.
-            </Text>
-          </Group>
-        </Paper>
-      )}
+    <Stack gap="lg">
+      <PageHeader
+        title={`Furry Resources — ${SECTION_TITLES[section]}`}
+        tooltip={
+          section !== 'skills'
+            ? 'Changes to Crew status (wtf-crew) or Keycloak-mapped departments take effect for the affected user after a re-login.'
+            : undefined
+        }
+        actions={
+          <Button
+            variant="default"
+            size="xs"
+            leftSection={<IconRefresh size={14} />}
+            onClick={() => {
+              setLoading(true);
+              void loadData();
+            }}
+            loading={loading}
+          >
+            Refresh
+          </Button>
+        }
+      />
 
       {!crewGroupConfigured && !loading && (
-        <Paper
-          p="sm"
-          radius="sm"
-          withBorder
-          style={{
-            backgroundColor: 'rgba(250, 82, 82, 0.1)',
-            borderColor: 'rgba(250, 82, 82, 0.35)',
-          }}
-        >
-          <Group gap="xs" wrap="nowrap">
-            <IconAlertCircle size={18} color="var(--mantine-color-red-4)" />
-            <Text size="xs" fw={600} c="red.4">
-              Keycloak group <code>wtf-crew</code> was not found. Please verify in Keycloak Admin
-              that the group exists and the service account has <code>query-groups</code>,{' '}
-              <code>view-users</code>, and <code>manage-users</code>.
-            </Text>
-          </Group>
-        </Paper>
+        <Alert color="red" icon={<IconAlertCircle size={16} />}>
+          Keycloak group <code>wtf-crew</code> was not found. Verify in Keycloak Admin
+          that the group exists and the service account has <code>query-groups</code>,{' '}
+          <code>view-users</code>, and <code>manage-users</code>.
+        </Alert>
       )}
 
-      {statusMessage && (
-        <Paper
-          p="sm"
-          radius="sm"
-          withBorder
-          style={{
-            backgroundColor:
-              statusMessage.type === 'success'
-                ? 'rgba(18, 184, 134, 0.1)'
-                : 'rgba(250, 82, 82, 0.1)',
-            borderColor:
-              statusMessage.type === 'success'
-                ? 'rgba(18, 184, 134, 0.35)'
-                : 'rgba(250, 82, 82, 0.35)',
-          }}
-        >
-          <Text
-            size="xs"
-            fw={600}
-            c={statusMessage.type === 'success' ? 'teal.4' : 'red.4'}
-          >
-            {statusMessage.text}
-          </Text>
-        </Paper>
-      )}
-
-      {section === 'crew' && detailUserId && (
-        <FrCrewDetailView
-          userId={detailUserId}
-          isFrAdmin={isFrAdmin}
-          currentUserId={currentUserId}
-        />
+      {errorMessage && (
+        <Alert color="red" icon={<IconAlertCircle size={16} />}>
+          {errorMessage}
+        </Alert>
       )}
 
       {section === 'crew' && !detailUserId && (
@@ -249,7 +175,7 @@ export function FrWorkspace({
           currentUserId={currentUserId}
           isFrAdmin={isFrAdmin}
           onRefresh={loadData}
-          onStatusMessage={setStatusMessage}
+          onStatusMessage={handleStatusMessage}
         />
       )}
 
@@ -260,7 +186,7 @@ export function FrWorkspace({
           users={users}
           isFrAdmin={effectiveCanWriteDepartments}
           onRefresh={loadData}
-          onStatusMessage={setStatusMessage}
+          onStatusMessage={handleStatusMessage}
         />
       )}
 
@@ -271,7 +197,7 @@ export function FrWorkspace({
           users={users}
           canWrite={effectiveCanWriteSkills}
           onRefresh={loadData}
-          onStatusMessage={setStatusMessage}
+          onStatusMessage={handleStatusMessage}
         />
       )}
     </Stack>

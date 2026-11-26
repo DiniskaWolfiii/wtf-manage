@@ -17,12 +17,15 @@ import {
   Pill,
   Select,
   Stack,
+  Table,
   Text,
   Textarea,
   TextInput,
   Timeline,
+  Title,
 } from '@mantine/core';
 import {
+  IconAlertCircle,
   IconArrowLeft,
   IconCheck,
   IconEdit,
@@ -34,17 +37,16 @@ import {
   IconUserMinus,
 } from '@tabler/icons-react';
 import type { UserProfileData } from '@/lib/keycloak';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { getSafeAvatarUrl } from '@/lib/validation';
-import {
-  DARK_MODAL_STYLES,
-  type CrewLifecycleEvent,
-  type CrewProfile,
-  type CrewRoleItem,
-  type CrewSkillItem,
-  type CrewStatus,
-  type DepartmentItem,
-  type FrStatusMessage,
-  type SkillCatalogItem,
+import type {
+  CrewLifecycleEvent,
+  CrewProfile,
+  CrewRoleItem,
+  CrewSkillItem,
+  CrewStatus,
+  DepartmentItem,
+  SkillCatalogItem,
 } from '@/components/fr/types';
 
 interface EditableAssignmentRow {
@@ -120,7 +122,7 @@ export function FrCrewDetailView({
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<FrStatusMessage | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [isCrew, setIsCrew] = useState(false);
   const [profile, setProfile] = useState<UserProfileData | null>(null);
@@ -131,7 +133,6 @@ export function FrCrewDetailView({
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [skillsCatalog, setSkillsCatalog] = useState<SkillCatalogItem[]>([]);
 
-  // Master-data form state
   const [formStatus, setFormStatus] = useState<CrewStatus>('active');
   const [formJoinedAt, setFormJoinedAt] = useState('');
   const [formOffboardedAt, setFormOffboardedAt] = useState('');
@@ -139,7 +140,6 @@ export function FrCrewDetailView({
   const [formNotes, setFormNotes] = useState('');
   const [savingMaster, setSavingMaster] = useState(false);
 
-  // Status / Offboard Modal state
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [modalStatus, setModalStatus] = useState<CrewStatus>('on_leave');
   const [modalEffectiveAt, setModalEffectiveAt] = useState(() =>
@@ -148,7 +148,6 @@ export function FrCrewDetailView({
   const [modalReason, setModalReason] = useState('');
   const [savingModal, setSavingModal] = useState(false);
 
-  // Roles & Skills Edit Modals
   const [rolesModalOpen, setRolesModalOpen] = useState(false);
   const [assignmentRows, setAssignmentRows] = useState<EditableAssignmentRow[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
@@ -180,12 +179,12 @@ export function FrCrewDetailView({
   );
 
   const loadDetail = useCallback(async () => {
-    setError(null);
     try {
       const res = await fetch(`/api/fr/crew/${encodeURIComponent(userId)}`, {
         cache: 'no-store',
       });
       const data = await res.json();
+      setError(null);
       if (!res.ok) {
         setError(data.error || 'Failed to load crew profile.');
         return;
@@ -193,7 +192,9 @@ export function FrCrewDetailView({
       setIsCrew(Boolean(data.isCrew));
       setProfile(data.profile ?? null);
       setCrewProfile(data.crewProfile ?? null);
-      setLifecycleEvents(Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []);
+      setLifecycleEvents(
+        Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []
+      );
       setRoles(Array.isArray(data.roles) ? data.roles : []);
       setSkills(Array.isArray(data.skills) ? data.skills : []);
       setDepartments(Array.isArray(data.departments) ? data.departments : []);
@@ -212,6 +213,7 @@ export function FrCrewDetailView({
       .then(async (res) => {
         const data = await res.json();
         if (cancelled) return;
+        setError(null);
         if (!res.ok) {
           setError(data.error || 'Failed to load crew profile.');
           return;
@@ -219,7 +221,9 @@ export function FrCrewDetailView({
         setIsCrew(Boolean(data.isCrew));
         setProfile(data.profile ?? null);
         setCrewProfile(data.crewProfile ?? null);
-        setLifecycleEvents(Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []);
+        setLifecycleEvents(
+          Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []
+        );
         setRoles(Array.isArray(data.roles) ? data.roles : []);
         setSkills(Array.isArray(data.skills) ? data.skills : []);
         setDepartments(Array.isArray(data.departments) ? data.departments : []);
@@ -258,7 +262,8 @@ export function FrCrewDetailView({
     [skillsCatalog]
   );
 
-  const effectiveStatus: CrewStatus = crewProfile?.status ?? (isCrew ? 'active' : 'offboarded');
+  const effectiveStatus: CrewStatus =
+    crewProfile?.status ?? (isCrew ? 'active' : 'offboarded');
   const statusBadge = getStatusBadgeProps(effectiveStatus);
   const safeAvatar = getSafeAvatarUrl(profile?.avatarUrl);
   const displayName =
@@ -267,11 +272,16 @@ export function FrCrewDetailView({
     profile?.username ||
     userId;
 
+  const reportActionError = useCallback((message: string) => {
+    setActionError(message);
+    notifyError(message);
+  }, []);
+
   const handleSaveMasterData = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!crewProfile) return;
     setSavingMaster(true);
-    setStatusMessage(null);
+    setActionError(null);
     try {
       const res = await fetch(
         `/api/fr/crew/${encodeURIComponent(userId)}/master-data`,
@@ -289,21 +299,17 @@ export function FrCrewDetailView({
       );
       const data = await res.json();
       if (!res.ok) {
-        setStatusMessage({
-          type: 'error',
-          text: data.error || 'Failed to save master data.',
-        });
+        reportActionError(data.error || 'Failed to save master data.');
         return;
       }
       setCrewProfile(data.crewProfile);
-      setLifecycleEvents(Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []);
+      setLifecycleEvents(
+        Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []
+      );
       syncFormFromMaster(data.crewProfile, isCrew);
-      setStatusMessage({ type: 'success', text: 'Master data saved.' });
+      notifySuccess('Master data saved.');
     } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Network error while saving master data.',
-      });
+      reportActionError('Network error while saving master data.');
     } finally {
       setSavingMaster(false);
     }
@@ -319,7 +325,7 @@ export function FrCrewDetailView({
   const handleConfirmStatusModal = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingModal(true);
-    setStatusMessage(null);
+    setActionError(null);
     try {
       if (modalStatus === 'offboarded') {
         const res = await fetch(`/api/fr/crew/${encodeURIComponent(userId)}`, {
@@ -329,26 +335,19 @@ export function FrCrewDetailView({
         });
         const data = await res.json();
         if (!res.ok) {
-          setStatusMessage({
-            type: 'error',
-            text: data.error || 'Failed to offboard user.',
-          });
+          reportActionError(data.error || 'Failed to offboard user.');
           return;
         }
         setStatusModalOpen(false);
-        setStatusMessage({
-          type: 'success',
-          text: 'Crew member offboarded.',
-        });
+        notifySuccess('Crew member offboarded.');
         await loadDetail();
         return;
       }
 
       if (effectiveStatus === 'offboarded') {
-        setStatusMessage({
-          type: 'error',
-          text: 'Offboarded crew members must be re-onboarded via "Re-Onboard" to restore wtf-crew access.',
-        });
+        reportActionError(
+          'Offboarded crew members must be re-onboarded via "Re-Onboard" to restore wtf-crew access.'
+        );
         return;
       }
 
@@ -367,31 +366,25 @@ export function FrCrewDetailView({
             status: modalStatus,
             effectiveAt: effectiveIso,
             eventNote: modalReason.trim() || null,
-            offboardReason: modalStatus === 'on_leave' ? modalReason.trim() || null : null,
+            offboardReason:
+              modalStatus === 'on_leave' ? modalReason.trim() || null : null,
           }),
         }
       );
       const data = await res.json();
       if (!res.ok) {
-        setStatusMessage({
-          type: 'error',
-          text: data.error || 'Failed to update status.',
-        });
+        reportActionError(data.error || 'Failed to update status.');
         return;
       }
       setStatusModalOpen(false);
       setCrewProfile(data.crewProfile);
-      setLifecycleEvents(Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []);
+      setLifecycleEvents(
+        Array.isArray(data.lifecycleEvents) ? data.lifecycleEvents : []
+      );
       syncFormFromMaster(data.crewProfile, isCrew);
-      setStatusMessage({
-        type: 'success',
-        text: `Status updated to "${getStatusBadgeProps(modalStatus).label}".`,
-      });
+      notifySuccess(`Status updated to "${getStatusBadgeProps(modalStatus).label}".`);
     } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Network error while updating status.',
-      });
+      reportActionError('Network error while updating status.');
     } finally {
       setSavingModal(false);
     }
@@ -399,29 +392,20 @@ export function FrCrewDetailView({
 
   const handleReOnboard = async () => {
     setReboarding(true);
-    setStatusMessage(null);
+    setActionError(null);
     try {
       const res = await fetch(`/api/fr/crew/${encodeURIComponent(userId)}`, {
         method: 'POST',
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatusMessage({
-          type: 'error',
-          text: data.error || 'Failed to re-onboard user.',
-        });
+        reportActionError(data.error || 'Failed to re-onboard user.');
         return;
       }
-      setStatusMessage({
-        type: 'success',
-        text: 'Crew member re-onboarded to Crew (wtf-crew).',
-      });
+      notifySuccess('Crew member re-onboarded to Crew (wtf-crew).');
       await loadDetail();
     } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Network error while re-onboarding user.',
-      });
+      reportActionError('Network error while re-onboarding user.');
     } finally {
       setReboarding(false);
     }
@@ -456,18 +440,12 @@ export function FrCrewDetailView({
 
     for (const row of assignmentRows) {
       if (!row.departmentId) {
-        setStatusMessage({
-          type: 'error',
-          text: 'Please select a department for each row.',
-        });
+        reportActionError('Please select a department for each row.');
         return;
       }
       const deptId = Number(row.departmentId);
       if (usedDeptIds.has(deptId)) {
-        setStatusMessage({
-          type: 'error',
-          text: 'Duplicate department selected.',
-        });
+        reportActionError('Duplicate department selected.');
         return;
       }
       usedDeptIds.add(deptId);
@@ -475,7 +453,7 @@ export function FrCrewDetailView({
     }
 
     setSavingRoles(true);
-    setStatusMessage(null);
+    setActionError(null);
     try {
       const res = await fetch(`/api/fr/crew/${encodeURIComponent(userId)}`, {
         method: 'PUT',
@@ -484,20 +462,14 @@ export function FrCrewDetailView({
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatusMessage({
-          type: 'error',
-          text: data.error || 'Failed to update departments.',
-        });
+        reportActionError(data.error || 'Failed to update departments.');
         return;
       }
       setRolesModalOpen(false);
-      setStatusMessage({ type: 'success', text: 'Departments updated.' });
+      notifySuccess('Departments updated.');
       await loadDetail();
     } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Network error while updating departments.',
-      });
+      reportActionError('Network error while updating departments.');
     } finally {
       setSavingRoles(false);
     }
@@ -533,18 +505,12 @@ export function FrCrewDetailView({
 
     for (const row of skillRows) {
       if (!row.skillId || !row.level) {
-        setStatusMessage({
-          type: 'error',
-          text: 'Please select a skill and level for each row.',
-        });
+        reportActionError('Please select a skill and level for each row.');
         return;
       }
       const skillId = Number(row.skillId);
       if (usedSkillIds.has(skillId)) {
-        setStatusMessage({
-          type: 'error',
-          text: 'Duplicate skill selected.',
-        });
+        reportActionError('Duplicate skill selected.');
         return;
       }
       usedSkillIds.add(skillId);
@@ -552,7 +518,7 @@ export function FrCrewDetailView({
     }
 
     setSavingSkills(true);
-    setStatusMessage(null);
+    setActionError(null);
     try {
       const res = await fetch(`/api/fr/crew/${encodeURIComponent(userId)}`, {
         method: 'PATCH',
@@ -561,20 +527,14 @@ export function FrCrewDetailView({
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatusMessage({
-          type: 'error',
-          text: data.error || 'Failed to update skills.',
-        });
+        reportActionError(data.error || 'Failed to update skills.');
         return;
       }
       setSkillsModalOpen(false);
-      setStatusMessage({ type: 'success', text: 'Skills updated.' });
+      notifySuccess('Skills updated.');
       await loadDetail();
     } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Network error while updating skills.',
-      });
+      reportActionError('Network error while updating skills.');
     } finally {
       setSavingSkills(false);
     }
@@ -582,15 +542,7 @@ export function FrCrewDetailView({
 
   if (loading) {
     return (
-      <Paper
-        p="xl"
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
-          borderColor: 'var(--mantine-color-dark-4)',
-        }}
-      >
+      <Paper p="xl" withBorder>
         <Group justify="center" gap="sm" py="md">
           <Loader size="sm" color="cyan" />
           <Text size="sm" c="dimmed">
@@ -603,7 +555,7 @@ export function FrCrewDetailView({
 
   if (error || !profile) {
     return (
-      <Stack gap={24}>
+      <Stack gap="lg">
         <Button
           component={Link}
           href="/fr/crew"
@@ -615,15 +567,24 @@ export function FrCrewDetailView({
         >
           Back to Crew Management
         </Button>
-        <Alert color="red" title="Profile unavailable">
+        <Alert color="red" icon={<IconAlertCircle size={16} />} title="Profile unavailable">
           {error || 'Could not load crew profile.'}
         </Alert>
       </Stack>
     );
   }
 
+  const addressDisplay =
+    [
+      profile.street,
+      [profile.zip, profile.city].filter(Boolean).join(' '),
+      profile.country,
+    ]
+      .filter(Boolean)
+      .join(', ') || '—';
+
   return (
-    <Stack gap={24}>
+    <Stack gap="lg">
       <Button
         component={Link}
         href="/fr/crew"
@@ -636,61 +597,33 @@ export function FrCrewDetailView({
         Back to Crew Management
       </Button>
 
-      {statusMessage && (
-        <Paper
-          p="sm"
-          radius="sm"
-          withBorder
-          style={{
-            backgroundColor:
-              statusMessage.type === 'success'
-                ? 'rgba(18, 184, 134, 0.1)'
-                : 'rgba(250, 82, 82, 0.1)',
-            borderColor:
-              statusMessage.type === 'success'
-                ? 'rgba(18, 184, 134, 0.35)'
-                : 'rgba(250, 82, 82, 0.35)',
-          }}
-        >
-          <Text
-            size="xs"
-            fw={600}
-            c={statusMessage.type === 'success' ? 'teal.4' : 'red.4'}
-          >
-            {statusMessage.text}
-          </Text>
-        </Paper>
+      {actionError && (
+        <Alert color="red" icon={<IconAlertCircle size={16} />}>
+          {actionError}
+        </Alert>
       )}
 
       {/* Profile Header */}
-      <Paper
-        p={24}
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
-          borderColor: 'var(--mantine-color-dark-4)',
-        }}
-      >
+      <Paper p="lg" withBorder>
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
           <Group gap="md" wrap="nowrap" style={{ minWidth: 0 }}>
-            <Avatar src={safeAvatar} size={60} radius="xl" color="cyan">
+            <Avatar src={safeAvatar} size={56} radius="xl" color="cyan">
               {(profile.username || '?')[0]?.toUpperCase()}
             </Avatar>
             <Group gap="sm" wrap="wrap" align="center" style={{ minWidth: 0 }}>
-              <Text size="xl" fw={700} c="white">
+              <Title order={2} fz="xl" fw={700} c="var(--mantine-color-white)">
                 {displayName}
-              </Text>
+              </Title>
               <Text size="sm" c="dimmed">
                 @{profile.username}
               </Text>
-              <Badge color={statusBadge.color} variant="light" size="sm">
+              <Badge color={statusBadge.color} size="sm">
                 {statusBadge.label}
               </Badge>
             </Group>
           </Group>
 
-          <Group gap="sm" wrap="wrap">
+          <Group gap="xs" wrap="wrap">
             {isFrAdmin && effectiveStatus !== 'offboarded' && crewProfile && (
               <Button
                 variant="default"
@@ -721,7 +654,7 @@ export function FrCrewDetailView({
                 size="xs"
                 leftSection={<IconUserCheck size={14} />}
                 loading={reboarding}
-                onClick={handleReOnboard}
+                onClick={() => void handleReOnboard()}
               >
                 Re-Onboard
               </Button>
@@ -732,118 +665,64 @@ export function FrCrewDetailView({
 
       {!crewProfile && (
         <Alert color="cyan" icon={<IconInfoCircle size={16} />}>
-          No central master-data record exists for this crew member yet. Click{' '}
-          <strong>&quot;Sync Keycloak&quot;</strong> in Crew Management to initialize master data
-          and lifecycle history.
+          No central master-data record exists yet. Use <strong>Sync Keycloak</strong> in
+          Crew Management to initialize master data.
         </Alert>
       )}
 
       {/* 2-Column Content */}
-      <Grid gap="md">
-        {/* Left: Master Data & Contact */}
+      <Grid gap="lg">
         <Grid.Col span={{ base: 12, md: 7 }}>
-          <Paper
-            p={24}
-            radius="md"
-            withBorder
-            h="100%"
-            style={{
-              backgroundColor: 'var(--mantine-color-dark-7)',
-              borderColor: 'var(--mantine-color-dark-4)',
-            }}
-          >
+          <Paper p="lg" withBorder h="100%">
             <Stack gap="md">
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+              <Text size="xs" fw={600} tt="uppercase" c="dimmed">
                 Master Data &amp; Contact
               </Text>
-              <Divider color="var(--mantine-color-dark-4)" />
 
-              <Grid gap="xs">
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Name
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {[profile.firstName, profile.lastName].filter(Boolean).join(' ') || '—'}
-                  </Text>
-                </Grid.Col>
+              <Table.ScrollContainer minWidth={360}>
+                <Table withTableBorder>
+                  <Table.Tbody>
+                    <Table.Tr>
+                      <Table.Td c="dimmed" w="36%">
+                        Name
+                      </Table.Td>
+                      <Table.Td fw={600}>
+                        {[profile.firstName, profile.lastName].filter(Boolean).join(' ') ||
+                          '—'}
+                      </Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td c="dimmed">Email</Table.Td>
+                      <Table.Td fw={600}>{profile.email || '—'}</Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td c="dimmed">Telegram</Table.Td>
+                      <Table.Td fw={600}>{profile.telegram || '—'}</Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td c="dimmed">Pronouns / Species</Table.Td>
+                      <Table.Td fw={600}>
+                        {[profile.pronouns, profile.species].filter(Boolean).join(' · ') ||
+                          '—'}
+                      </Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td c="dimmed">Phone</Table.Td>
+                      <Table.Td fw={600}>{profile.phone || '—'}</Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td c="dimmed">Date of Birth</Table.Td>
+                      <Table.Td fw={600}>{profile.dob || '—'}</Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td c="dimmed">Address</Table.Td>
+                      <Table.Td fw={600}>{addressDisplay}</Table.Td>
+                    </Table.Tr>
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
 
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Email
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {profile.email || '—'}
-                  </Text>
-                </Grid.Col>
-
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Telegram
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {profile.telegram || '—'}
-                  </Text>
-                </Grid.Col>
-
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Pronouns / Species
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {[profile.pronouns, profile.species].filter(Boolean).join(' · ') || '—'}
-                  </Text>
-                </Grid.Col>
-
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Phone
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {profile.phone || '—'}
-                  </Text>
-                </Grid.Col>
-
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Date of Birth
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {profile.dob || '—'}
-                  </Text>
-                </Grid.Col>
-
-                <Grid.Col span={4}>
-                  <Text size="xs" c="dimmed">
-                    Address
-                  </Text>
-                </Grid.Col>
-                <Grid.Col span={8}>
-                  <Text size="sm" fw={600} c="white">
-                    {[
-                      profile.street,
-                      [profile.zip, profile.city].filter(Boolean).join(' '),
-                      profile.country,
-                    ]
-                      .filter(Boolean)
-                      .join(', ') || '—'}
-                  </Text>
-                </Grid.Col>
-              </Grid>
-
-              <Divider color="var(--mantine-color-dark-4)" />
+              <Divider />
 
               <form onSubmit={handleSaveMasterData}>
                 <Stack gap="sm">
@@ -852,7 +731,9 @@ export function FrCrewDetailView({
                       <Select
                         label="Lifecycle Status"
                         size="xs"
-                        disabled={!isFrAdmin || !crewProfile || effectiveStatus === 'offboarded'}
+                        disabled={
+                          !isFrAdmin || !crewProfile || effectiveStatus === 'offboarded'
+                        }
                         value={formStatus}
                         onChange={(val) =>
                           setFormStatus((val as CrewStatus) || 'active')
@@ -908,13 +789,6 @@ export function FrCrewDetailView({
                     disabled={!isFrAdmin || !crewProfile}
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.currentTarget.value)}
-                    styles={{
-                      input: {
-                        backgroundColor: 'var(--mantine-color-dark-6)',
-                        borderColor: 'var(--mantine-color-dark-4)',
-                        color: 'var(--mantine-color-white)',
-                      },
-                    }}
                   />
 
                   {isFrAdmin && (
@@ -922,7 +796,6 @@ export function FrCrewDetailView({
                       <Button
                         type="submit"
                         size="xs"
-                        color="cyan"
                         leftSection={<IconCheck size={14} />}
                         loading={savingMaster}
                         disabled={!crewProfile}
@@ -937,21 +810,11 @@ export function FrCrewDetailView({
           </Paper>
         </Grid.Col>
 
-        {/* Right: Departments & Skills */}
         <Grid.Col span={{ base: 12, md: 5 }}>
-          <Paper
-            p={24}
-            radius="md"
-            withBorder
-            h="100%"
-            style={{
-              backgroundColor: 'var(--mantine-color-dark-7)',
-              borderColor: 'var(--mantine-color-dark-4)',
-            }}
-          >
+          <Paper p="lg" withBorder h="100%">
             <Stack gap="md">
               <Group justify="space-between">
-                <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                <Text size="xs" fw={600} tt="uppercase" c="dimmed">
                   Departments &amp; Positions
                 </Text>
                 {isFrAdmin && isCrew && (
@@ -965,46 +828,41 @@ export function FrCrewDetailView({
                   </Button>
                 )}
               </Group>
-              <Divider color="var(--mantine-color-dark-4)" />
 
               {roles.length === 0 ? (
                 <Text size="xs" c="dimmed">
                   No departments assigned yet.
                 </Text>
               ) : (
-                <Stack gap="xs">
-                  {roles.map((r) => (
-                    <Paper
-                      key={r.departmentId}
-                      p="xs"
-                      withBorder
-                      style={{
-                        backgroundColor: 'var(--mantine-color-dark-6)',
-                        borderColor: 'var(--mantine-color-dark-4)',
-                      }}
-                    >
-                      <Group justify="space-between" wrap="nowrap">
-                        <div>
-                          <Text size="sm" fw={600} c="white">
-                            {r.departmentName}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            {r.position || 'Crew Member'}
-                          </Text>
-                        </div>
-                        <Badge variant="light" color="cyan" size="xs">
-                          #{r.sortOrder}
-                        </Badge>
-                      </Group>
-                    </Paper>
-                  ))}
-                </Stack>
+                <Table.ScrollContainer minWidth={300}>
+                  <Table withTableBorder>
+                    <Table.Tbody>
+                      {roles.map((r) => (
+                        <Table.Tr key={r.departmentId}>
+                          <Table.Td>
+                            <Text size="sm" fw={600}>
+                              {r.departmentName}
+                            </Text>
+                            <Text size="xs" c="dimmed">
+                              {r.position || 'Crew Member'}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            <Badge color="cyan" size="xs">
+                              #{r.sortOrder}
+                            </Badge>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
               )}
 
-              <Divider color="var(--mantine-color-dark-4)" />
+              <Divider />
 
               <Group justify="space-between">
-                <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                <Text size="xs" fw={600} tt="uppercase" c="dimmed">
                   Skills &amp; Qualifications
                 </Text>
                 {isFrAdmin && isCrew && (
@@ -1038,29 +896,22 @@ export function FrCrewDetailView({
       </Grid>
 
       {/* Lifecycle Timeline */}
-      <Paper
-        p={24}
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: 'var(--mantine-color-dark-7)',
-          borderColor: 'var(--mantine-color-dark-4)',
-        }}
-      >
+      <Paper p="lg" withBorder>
         <Stack gap="md">
           <Group justify="space-between">
             <Group gap="xs">
               <IconHistory size={16} color="var(--mantine-color-cyan-4)" />
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+              <Text size="xs" fw={600} tt="uppercase" c="dimmed">
                 Lifecycle Timeline
               </Text>
             </Group>
-            <Text size="xs" c="dimmed">
+            <Badge size="xs" color="gray">
               {lifecycleEvents.length}{' '}
               {lifecycleEvents.length === 1 ? 'entry' : 'entries'}
-            </Text>
+            </Badge>
           </Group>
-          <Divider color="var(--mantine-color-dark-4)" />
+
+          <Divider />
 
           {lifecycleEvents.length === 0 ? (
             <Text size="xs" c="dimmed">
@@ -1079,7 +930,7 @@ export function FrCrewDetailView({
                         <Text size="xs" c="dimmed" ff="monospace">
                           {formatDateDisplay(ev.effectiveAt)}
                         </Text>
-                        <Text size="sm" fw={600} c="white">
+                        <Text size="sm" fw={600}>
                           {meta.title}
                         </Text>
                       </Group>
@@ -1108,14 +959,12 @@ export function FrCrewDetailView({
         opened={statusModalOpen}
         onClose={() => setStatusModalOpen(false)}
         title="Change Status / Offboard"
-        centered
-        styles={DARK_MODAL_STYLES}
       >
         <form onSubmit={handleConfirmStatusModal}>
           <Stack gap="sm">
             <Text size="xs" c="dimmed">
               Crew member:{' '}
-              <strong style={{ color: '#fff' }}>
+              <strong style={{ color: 'var(--mantine-color-white)' }}>
                 {displayName} (@{profile.username})
               </strong>
             </Text>
@@ -1157,13 +1006,6 @@ export function FrCrewDetailView({
               onChange={(e) => setModalReason(e.currentTarget.value)}
             />
 
-            <Alert color="cyan" icon={<IconInfoCircle size={15} />}>
-              <Text size="xs">
-                Every status change is automatically recorded in the lifecycle timeline and
-                audit log.
-              </Text>
-            </Alert>
-
             <Group justify="flex-end" mt="xs">
               <Button
                 variant="default"
@@ -1190,16 +1032,14 @@ export function FrCrewDetailView({
         opened={rolesModalOpen}
         onClose={() => setRolesModalOpen(false)}
         title={`Edit Departments — @${profile.username}`}
-        centered
         size="lg"
-        styles={DARK_MODAL_STYLES}
       >
         <form onSubmit={handleSaveRoles}>
           <Stack gap="sm">
-            {assignmentRows.map((row) => (
+            {assignmentRows.map((row, index) => (
               <Group key={row.key} align="flex-end" wrap="nowrap">
                 <Select
-                  label="Department"
+                  label={index === 0 ? 'Department' : undefined}
                   size="xs"
                   style={{ flex: 1 }}
                   data={departmentSelectOptions}
@@ -1213,7 +1053,7 @@ export function FrCrewDetailView({
                   }
                 />
                 <TextInput
-                  label="Position"
+                  label={index === 0 ? 'Position' : undefined}
                   placeholder="e.g. Lead, Staff"
                   size="xs"
                   style={{ flex: 1 }}
@@ -1230,6 +1070,7 @@ export function FrCrewDetailView({
                 <ActionIcon
                   color="red"
                   variant="subtle"
+                  size="lg"
                   onClick={() =>
                     setAssignmentRows((prev) => prev.filter((r) => r.key !== row.key))
                   }
@@ -1261,10 +1102,14 @@ export function FrCrewDetailView({
             </Button>
 
             <Group justify="flex-end" mt="sm">
-              <Button variant="default" size="xs" onClick={() => setRolesModalOpen(false)}>
+              <Button
+                variant="default"
+                size="xs"
+                onClick={() => setRolesModalOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" size="xs" color="cyan" loading={savingRoles}>
+              <Button type="submit" size="xs" loading={savingRoles}>
                 Save
               </Button>
             </Group>
@@ -1277,19 +1122,17 @@ export function FrCrewDetailView({
         opened={skillsModalOpen}
         onClose={() => setSkillsModalOpen(false)}
         title={`Edit Skills — @${profile.username}`}
-        centered
         size="lg"
-        styles={DARK_MODAL_STYLES}
       >
         <form onSubmit={handleSaveSkills}>
           <Stack gap="sm">
-            {skillRows.map((row) => {
+            {skillRows.map((row, index) => {
               const def = row.skillId ? skillCatalogMap.get(row.skillId) : undefined;
               const levelOptions = def?.levels ?? [];
               return (
                 <Group key={row.key} align="flex-end" wrap="nowrap">
                   <Select
-                    label="Skill"
+                    label={index === 0 ? 'Skill' : undefined}
                     size="xs"
                     style={{ flex: 1 }}
                     data={skillSelectOptions}
@@ -1310,7 +1153,7 @@ export function FrCrewDetailView({
                     }}
                   />
                   <Select
-                    label="Level"
+                    label={index === 0 ? 'Level' : undefined}
                     size="xs"
                     style={{ flex: 1 }}
                     data={levelOptions}
@@ -1326,6 +1169,7 @@ export function FrCrewDetailView({
                   <ActionIcon
                     color="red"
                     variant="subtle"
+                    size="lg"
                     onClick={() =>
                       setSkillRows((prev) => prev.filter((r) => r.key !== row.key))
                     }
@@ -1358,10 +1202,14 @@ export function FrCrewDetailView({
             </Button>
 
             <Group justify="flex-end" mt="sm">
-              <Button variant="default" size="xs" onClick={() => setSkillsModalOpen(false)}>
+              <Button
+                variant="default"
+                size="xs"
+                onClick={() => setSkillsModalOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" size="xs" color="cyan" loading={savingSkills}>
+              <Button type="submit" size="xs" loading={savingSkills}>
                 Save
               </Button>
             </Group>
